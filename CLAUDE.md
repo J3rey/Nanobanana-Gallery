@@ -4,20 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-```bash
-pnpm dev          # Start dev server (Express + Vite HMR, port 3000)
-pnpm build        # Build client (Vite → dist/public/) + server (esbuild → dist/index.js)
-pnpm start        # Run production server from dist/
-pnpm check        # TypeScript type checking (no emit)
-pnpm format       # Format with Prettier
-pnpm test         # Run Vitest tests
-pnpm db:push      # Run Drizzle migrations (generate + migrate)
+**Package manager:** pnpm is preferred. In shell environments where pnpm is unavailable, use `npm run` as a drop-in replacement — all scripts are identical.
+
+```powershell
+npm run dev          # Start dev server (Express + Vite HMR, port 3000)
+npm run build        # Build client (Vite → dist/public/) + server (esbuild → dist/index.js)
+npm run start        # Run production server from dist/
+npm run check        # TypeScript type checking (no emit)
+npm run format       # Format with Prettier
+npm run test         # Run Vitest tests
+npm run db:push      # Run Drizzle migrations (generate + migrate)
 ```
 
 Run a single test file:
-```bash
-pnpm test server/someFile.test.ts
+```powershell
+npx vitest run server/someFile.test.ts
 ```
+
+**Shell environment:** PowerShell (Windows). Use the PowerShell tool, not Bash. `pnpm` is not on PATH — use `npm run` or `npx` instead.
 
 ## Architecture
 

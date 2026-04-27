@@ -127,7 +127,7 @@ describe("geminiRouter", () => {
       );
 
       const result = await caller.generate({
-        apiKey: "test-key",
+        apiKey: "AIzaTestKey_ValidFormat_1234567890",
         prompt: "Make it watercolor",
         imageBase64: "dGVzdA==",
         imageMimeType: "image/jpeg",
@@ -145,7 +145,7 @@ describe("geminiRouter", () => {
       );
 
       const result = await caller.generate({
-        apiKey: "bad-key",
+        apiKey: "AIzaTestKey_ValidFormat_1234567890",
         prompt: "Edit this",
         imageBase64: "dGVzdA==",
       });
@@ -160,7 +160,7 @@ describe("geminiRouter", () => {
       );
 
       const result = await caller.generate({
-        apiKey: "test-key",
+        apiKey: "AIzaTestKey_ValidFormat_1234567890",
         prompt: "Edit this",
         imageBase64: "dGVzdA==",
       });
@@ -183,7 +183,7 @@ describe("geminiRouter", () => {
       );
 
       const result = await caller.generate({
-        apiKey: "test-key",
+        apiKey: "AIzaTestKey_ValidFormat_1234567890",
         prompt: "Something that fails",
         imageBase64: "dGVzdA==",
       });
@@ -202,7 +202,7 @@ describe("geminiRouter", () => {
       );
 
       const result = await caller.generate({
-        apiKey: "test-key",
+        apiKey: "AIzaTestKey_ValidFormat_1234567890",
         prompt: "Blocked prompt",
         imageBase64: "dGVzdA==",
       });
@@ -234,7 +234,7 @@ describe("geminiRouter", () => {
       globalThis.fetch = mockFetch;
 
       const result = await caller.generate({
-        apiKey: "test-key",
+        apiKey: "AIzaTestKey_ValidFormat_1234567890",
         prompt: "Generate a sunset",
       });
 
@@ -268,7 +268,7 @@ describe("geminiRouter", () => {
       globalThis.fetch = mockFetch;
 
       await caller.generate({
-        apiKey: "test-key",
+        apiKey: "AIzaTestKey_ValidFormat_1234567890",
         prompt: "Make it watercolor",
         imageBase64: "dGVzdA==",
         imageMimeType: "image/jpeg",
