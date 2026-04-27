@@ -84,9 +84,15 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html, body {
+    overscroll-behavior: none;
+    -webkit-overscroll-behavior: none;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    /* Fallback background color matching the gradient midpoint */
+    background-color: #A8B8D8;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -152,10 +158,23 @@
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
-  /* Gradient background */
+  /* Gradient background — fixed to viewport so overscroll never reveals a gap */
   .gradient-bg {
-    background: linear-gradient(135deg, #87CEEB 0%, #7B9FD4 35%, #A8B8D8 65%, #C4B5E0 100%);
     min-height: 100vh;
+    /* The gradient is applied via a fixed pseudo-element so it never scrolls away */
+    position: relative;
+  }
+  .gradient-bg::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(135deg, #87CEEB 0%, #7B9FD4 35%, #A8B8D8 65%, #C4B5E0 100%);
+    /* Extend beyond viewport to cover iOS rubber-band overscroll */
+    top: -50vh;
+    bottom: -50vh;
+    left: -10vw;
+    right: -10vw;
   }
 
   /* Card depth shadows */
@@ -172,4 +191,16 @@
       0 12px 32px rgba(100, 130, 180, 0.08),
       0 20px 56px rgba(100, 130, 180, 0.06);
   }
+}
+
+/* Jiggle animation for edit mode (iOS-style) */
+@keyframes jiggle {
+  0%, 100% { transform: rotate(-0.8deg); }
+  25% { transform: rotate(0.8deg); }
+  50% { transform: rotate(-0.6deg); }
+  75% { transform: rotate(0.6deg); }
+}
+
+.animate-jiggle {
+  animation: jiggle 0.3s ease-in-out infinite;
 }

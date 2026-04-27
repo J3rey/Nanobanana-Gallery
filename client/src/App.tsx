@@ -9,8 +9,8 @@ import Home from "./pages/Home";
 import BatchConvert from "./pages/BatchConvert";
 import Gallery from "./pages/Gallery";
 import Layout from "./components/Layout";
-
 function Router() {
+  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
       <Route path="/" component={Home} />

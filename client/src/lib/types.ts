@@ -28,7 +28,15 @@ export interface GalleryImage {
   addedAt: number;
 }
 
-export type GridSize = 2 | 3 | 4 | 5;
+export type GridSize = 2 | 3 | 4;
+
+export interface PromptHistoryItem {
+  id: string;
+  text: string;
+  usedAt: number;
+  useCount: number;
+  isFavorite: boolean;
+}
 
 export interface GalleryState {
   images: GalleryImage[];

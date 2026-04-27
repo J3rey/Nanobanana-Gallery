@@ -1,41 +1,31 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Home, ArrowLeft } from "lucide-react";
+import { Home } from "lucide-react";
 
 export default function NotFound() {
   return (
-    <div className="container max-w-lg mx-auto text-center py-16">
+    <div className="container max-w-md mx-auto px-4 flex flex-col items-center justify-center min-h-[60vh]">
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-strong rounded-3xl p-10 sm:p-14 card-shadow"
+        className="text-center"
       >
-        <div className="text-7xl font-extrabold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent mb-4">
+        <div className="text-6xl font-bold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent mb-3">
           404
         </div>
-        <h1 className="text-2xl font-bold text-slate-800 mb-2">
-          Page Not Found
-        </h1>
-        <p className="text-slate-500 mb-8">
-          The page you're looking for doesn't exist or has been moved.
+        <h2 className="text-lg font-semibold text-slate-700 mb-1">
+          Page not found
+        </h2>
+        <p className="text-sm text-slate-400 mb-6">
+          The page you're looking for doesn't exist.
         </p>
-        <div className="flex items-center justify-center gap-3">
-          <Link href="/">
-            <Button className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl h-11 px-6 font-semibold shadow-lg shadow-blue-500/25">
-              <Home className="w-4 h-4 mr-2" />
-              Go Home
-            </Button>
-          </Link>
-          <Button
-            variant="outline"
-            className="glass rounded-xl h-11 px-6 font-semibold text-slate-600 hover:bg-white/60"
-            onClick={() => window.history.back()}
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Go Back
+        <Link href="/">
+          <Button className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-full h-10 px-5 font-semibold shadow-lg shadow-blue-500/25">
+            <Home className="w-4 h-4 mr-2" />
+            Go Home
           </Button>
-        </div>
+        </Link>
       </motion.div>
     </div>
   );

@@ -1,0 +1,55 @@
+# Project TODO
+
+- [x] Basic homepage layout (app dashboard)
+- [x] Bottom tab bar navigation
+- [x] Batch Convert page with NanoBanana API integration
+- [x] Pinterest masonry gallery with smooth zoom
+- [x] Edit mode with long-press delete (jiggle animation)
+- [x] Add photos from gallery page
+- [x] localStorage persistence for gallery images
+- [x] API key management (view, change, remove)
+- [x] Comprehensive API error handling (rate limits, quota, auth)
+- [x] Image lightbox viewer
+- [x] Upgrade to full-stack backend proxy for Magic Hour API (bypass CORS)
+- [x] Lazy API key validation (validate on first real conversion, not upfront)
+- [x] Update frontend to route API calls through backend proxy
+- [x] Resolve merge conflicts from web-db-user upgrade
+- [x] Push database schema
+- [x] Fix Magic Hour API endpoint (was /ai-image-generator/generate, should be /ai-image-editor for image-to-image)
+- [x] Implement async workflow: upload file → create job → poll GET /v1/image-projects/{id} for results
+- [x] Fix validateKey to use correct endpoint
+- [x] Replace Magic Hour API with Google Gemini API for image generation/editing
+- [x] Rewrite backend proxy (magicHourProxy.ts → geminiProxy.ts) for Gemini endpoints
+- [x] Update ApiKeyDialog for Gemini API key branding and validation
+- [x] Update BatchConvert to work with Gemini response format
+- [x] Update Home page references from Magic Hour to Gemini
+- [x] Update vitest tests for new Gemini proxy
+- [x] Fix Gemini model name — current model not found/not supported for generateContent image generation
+- [x] Add download button in lightbox viewer to save individual images
+- [x] Add a title in the gallery tab
+- [x] Fix subtitle colors — hard to read against background
+- [x] Move tip note from Home to Gallery page
+- [x] Add prompt history — save used prompts and allow reuse from a dropdown/list
+- [x] Add prompt favorites — star/unstar prompts to pin them at the top
+- [x] Persist prompt history and favorites in localStorage
+- [x] Build prompt picker UI with history list, favorites section, and search/filter
+- [x] Fix gallery edit mode toolbar to be sticky/anchored at the top when scrolling
+- [x] Verify drag-to-reorder — not implemented (dnd-kit installed but not wired up). Updated tip text to reflect actual features.
+- [x] Fix component overflow — upload summary card buttons ("Add More", "Clear") cut off on right
+- [x] Fix component overflow — lightbox header (download/close buttons) cut off on right
+- [x] Audit all components for similar overflow issues (fixed ApiKeyDialog buttons, BatchConvert results header)
+- [x] Improve iOS download — uses Web Share API on iOS, falls back to open-in-new-tab with toast
+- [x] Implement drag-to-rearrange in gallery using @dnd-kit
+- [x] Add "Download All" button to BatchConvert conversion results
+- [x] Add "Download Selected" / "Download All" button in gallery edit mode (iOS-friendly)
+- [x] Add robust error handling to gallery bulk download (check fetch response.ok, handle partial failures)
+- [x] Long-press in gallery should auto-select the pressed image when entering edit mode
+- [x] Auto-exit edit mode when all images are deselected (last one untapped)
+- [x] Remove S3 upload from conversion — return base64 data URL directly from backend
+- [x] Update frontend to use data URL directly instead of fetching from S3 URL (no changes needed — already compatible)
+- [x] Fix conversion bug — converted image is identical to input (no transformation applied)
+- [x] Fix gallery and conversion stats not persisting on mobile (localStorage issue)
+- [x] Make Home and Gallery pages feel app-native like the Convert page
+- [x] Fix background getting cut off when users scroll too far up or down
+- [x] Make Home page match Convert's mobile layout — no visible title header, glass cards fill width
+- [x] Make Gallery page match Convert's mobile layout — consistent card structure and spacing

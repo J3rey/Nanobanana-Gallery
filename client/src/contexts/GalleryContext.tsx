@@ -1,12 +1,23 @@
 /* 
  * NanoBanana Gallery — Global Gallery Context
- * Manages gallery images, grid size, and converted photos across pages
- * Design: Aero Glass — iOS-inspired glassmorphism
+ * - localStorage persistence for gallery images, grid size, and API key
+ * - Images stored as data URLs for persistence (blob URLs don't survive reload)
+ * - Lazy API key validation (validated on first real conversion, not upfront)
  */
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
-import type { GalleryImage, GridSize, ConvertedPhoto } from "@/lib/types";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import type { GalleryImage, GridSize, ConvertedPhoto, PromptHistoryItem } from "@/lib/types";
 import { nanoid } from "nanoid";
+
+const STORAGE_KEYS = {
+  images: "nanobanana-gallery-images",
+  gridSize: "nanobanana-grid-size",
+  apiKey: "nanobanana-api-key",
+  promptHistory: "nanobanana-prompt-history",
+  convertedPhotos: "nanobanana-converted-photos",
+};
+
+const MAX_PROMPT_HISTORY = 50;
 
 interface GalleryContextType {
   // Gallery state
@@ -14,7 +25,9 @@ interface GalleryContextType {
   gridSize: GridSize;
   setGridSize: (size: GridSize) => void;
   addImages: (urls: { url: string; name: string }[]) => void;
+  addImageFiles: (files: File[]) => Promise<void>;
   removeImage: (id: string) => void;
+  removeImages: (ids: string[]) => void;
   reorderImages: (fromIndex: number, toIndex: number) => void;
   clearGallery: () => void;
   
@@ -24,32 +37,168 @@ interface GalleryContextType {
   transferToGallery: (photoIds: string[]) => void;
   transferAllToGallery: () => void;
   
-  // API Key
+  // API Key — lazy validation (just save, validated on first real use)
   apiKey: string;
   setApiKey: (key: string) => void;
+
+  // Prompt history & favorites
+  promptHistory: PromptHistoryItem[];
+  addPromptToHistory: (text: string) => void;
+  togglePromptFavorite: (id: string) => void;
+  removePromptFromHistory: (id: string) => void;
 }
 
 const GalleryContext = createContext<GalleryContextType | null>(null);
 
+// Helper: convert File to data URL for persistence
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Helper: safe JSON parse from localStorage
+function loadFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+// Helper: safe JSON write to localStorage
+function saveToStorage(key: string, value: any) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn("localStorage write failed:", e);
+  }
+}
+
 export function GalleryProvider({ children }: { children: ReactNode }) {
-  const [images, setImages] = useState<GalleryImage[]>([]);
-  const [gridSize, setGridSize] = useState<GridSize>(3);
-  const [convertedPhotos, setConvertedPhotos] = useState<ConvertedPhoto[]>([]);
-  const [apiKey, setApiKey] = useState<string>(() => {
+  // Initialize from localStorage
+  const [images, setImages] = useState<GalleryImage[]>(() =>
+    loadFromStorage<GalleryImage[]>(STORAGE_KEYS.images, [])
+  );
+  const [gridSize, setGridSizeState] = useState<GridSize>(() => {
+    const stored = loadFromStorage<number>(STORAGE_KEYS.gridSize, 3);
+    return ([2, 3, 4].includes(stored) ? stored : 3) as GridSize;
+  });
+  const [convertedPhotos, setConvertedPhotos] = useState<ConvertedPhoto[]>(() =>
+    loadFromStorage<ConvertedPhoto[]>(STORAGE_KEYS.convertedPhotos, [])
+  );
+  const [apiKey, setApiKeyState] = useState<string>(() => {
     try {
-      return localStorage.getItem("nanobanana-api-key") || "";
+      return localStorage.getItem(STORAGE_KEYS.apiKey) || "";
     } catch {
       return "";
     }
   });
+  const [promptHistory, setPromptHistory] = useState<PromptHistoryItem[]>(() =>
+    loadFromStorage<PromptHistoryItem[]>(STORAGE_KEYS.promptHistory, [])
+  );
+
+  // Persist prompt history
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.promptHistory, promptHistory);
+  }, [promptHistory]);
+
+  const addPromptToHistory = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setPromptHistory(prev => {
+      const existing = prev.find(p => p.text.toLowerCase() === trimmed.toLowerCase());
+      if (existing) {
+        // Update existing entry
+        return prev.map(p =>
+          p.id === existing.id
+            ? { ...p, usedAt: Date.now(), useCount: p.useCount + 1 }
+            : p
+        );
+      }
+      // Add new entry, cap at MAX_PROMPT_HISTORY
+      const newItem: PromptHistoryItem = {
+        id: nanoid(),
+        text: trimmed,
+        usedAt: Date.now(),
+        useCount: 1,
+        isFavorite: false,
+      };
+      const updated = [newItem, ...prev];
+      // Remove oldest non-favorites if over limit
+      if (updated.length > MAX_PROMPT_HISTORY) {
+        const favorites = updated.filter(p => p.isFavorite);
+        const nonFavorites = updated.filter(p => !p.isFavorite);
+        return [...favorites, ...nonFavorites.slice(0, MAX_PROMPT_HISTORY - favorites.length)];
+      }
+      return updated;
+    });
+  }, []);
+
+  const togglePromptFavorite = useCallback((id: string) => {
+    setPromptHistory(prev =>
+      prev.map(p => p.id === id ? { ...p, isFavorite: !p.isFavorite } : p)
+    );
+  }, []);
+
+  const removePromptFromHistory = useCallback((id: string) => {
+    setPromptHistory(prev => prev.filter(p => p.id !== id));
+  }, []);
+
+  // Debounced save for images (avoid writing on every tiny change)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Persist images to localStorage (debounced)
+  useEffect(() => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      saveToStorage(STORAGE_KEYS.images, images);
+    }, 500);
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [images]);
+
+  // Persist grid size immediately
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.gridSize, gridSize);
+  }, [gridSize]);
+
+  // Persist converted photos (debounced — they can contain large base64 data)
+  const convertedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (convertedSaveRef.current) clearTimeout(convertedSaveRef.current);
+    convertedSaveRef.current = setTimeout(() => {
+      // Only persist completed or errored photos (not in-progress ones)
+      const persistable = convertedPhotos.filter(p => p.status === 'done' || p.status === 'error');
+      saveToStorage(STORAGE_KEYS.convertedPhotos, persistable);
+    }, 1000);
+    return () => {
+      if (convertedSaveRef.current) clearTimeout(convertedSaveRef.current);
+    };
+  }, [convertedPhotos]);
+
+  const setGridSize = useCallback((size: GridSize) => {
+    setGridSizeState(size);
+  }, []);
 
   const handleSetApiKey = useCallback((key: string) => {
-    setApiKey(key);
+    setApiKeyState(key);
     try {
-      localStorage.setItem("nanobanana-api-key", key);
+      if (key) {
+        localStorage.setItem(STORAGE_KEYS.apiKey, key);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.apiKey);
+      }
     } catch { /* ignore */ }
   }, []);
 
+  // Add images from URLs (already loaded — e.g. converted results)
   const addImages = useCallback((urls: { url: string; name: string }[]) => {
     const newImages: GalleryImage[] = urls.map(({ url, name }) => ({
       id: nanoid(),
@@ -60,8 +209,34 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
     setImages(prev => [...prev, ...newImages]);
   }, []);
 
+  // Add images from File objects — converts to data URLs for persistence
+  const addImageFiles = useCallback(async (files: File[]) => {
+    const newImages: GalleryImage[] = [];
+    for (const file of files) {
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        newImages.push({
+          id: nanoid(),
+          url: dataUrl,
+          name: file.name,
+          addedAt: Date.now(),
+        });
+      } catch {
+        console.warn("Failed to read file:", file.name);
+      }
+    }
+    if (newImages.length > 0) {
+      setImages(prev => [...prev, ...newImages]);
+    }
+  }, []);
+
   const removeImage = useCallback((id: string) => {
     setImages(prev => prev.filter(img => img.id !== id));
+  }, []);
+
+  const removeImages = useCallback((ids: string[]) => {
+    const idSet = new Set(ids);
+    setImages(prev => prev.filter(img => !idSet.has(img.id)));
   }, []);
 
   const reorderImages = useCallback((fromIndex: number, toIndex: number) => {
@@ -112,7 +287,9 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
         gridSize,
         setGridSize,
         addImages,
+        addImageFiles,
         removeImage,
+        removeImages,
         reorderImages,
         clearGallery,
         convertedPhotos,
@@ -121,6 +298,10 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
         transferAllToGallery,
         apiKey,
         setApiKey: handleSetApiKey,
+        promptHistory,
+        addPromptToHistory,
+        togglePromptFavorite,
+        removePromptFromHistory,
       }}
     >
       {children}

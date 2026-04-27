@@ -1,295 +1,310 @@
 /* 
- * NanoBanana Gallery — Home Page
+ * NanoBanana Gallery — Home (App Dashboard)
  * Design: Aero Glass — iOS-inspired glassmorphism
- * - Hero section with AI conversion illustration
- * - Feature cards with glass effect
- * - Quick-start CTA buttons
+ * - User-centric dashboard
+ * - Quick actions: Convert, Gallery, Add Photos
+ * - Add Photos converts files to data URLs for localStorage persistence
  */
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
-import { Upload, Images, Sparkles, ArrowRight, Zap, Grid3X3, Move } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  Upload,
+  Images,
+  ArrowRight,
+  Key,
+  CheckCircle2,
+  ImagePlus,
+  X,
+} from "lucide-react";
 import { useGallery } from "@/contexts/GalleryContext";
 import ApiKeyDialog from "@/components/ApiKeyDialog";
-import { useState } from "react";
-
-const HERO_IMAGE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663298019635/3prKGU3n6QAPMMPEGR89Zp/ai-convert-illustration-6SwNn7DBvbHwBpXRmGKujG.webp";
-const UPLOAD_IMAGE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663298019635/3prKGU3n6QAPMMPEGR89Zp/upload-illustration-8U5wsjiFVgtvKdhC4n7Nwy.webp";
-const GALLERY_IMAGE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663298019635/3prKGU3n6QAPMMPEGR89Zp/gallery-illustration-MrJU5nFYSLSb2HkZauUAB7.webp";
-
-const features = [
-  {
-    icon: Upload,
-    title: "Batch Upload",
-    description: "Upload multiple photos at once and convert them all with a single prompt using the NanoBanana API.",
-    color: "from-blue-500 to-cyan-500",
-    shadow: "shadow-blue-500/20",
-  },
-  {
-    icon: Zap,
-    title: "AI Conversion",
-    description: "Transform your photos with AI-powered style transfer, editing, and generation up to 4K resolution.",
-    color: "from-indigo-500 to-purple-500",
-    shadow: "shadow-indigo-500/20",
-  },
-  {
-    icon: Grid3X3,
-    title: "Scalable Gallery",
-    description: "View your converted images in customizable grid layouts from 2x2 to 5x5 with smooth transitions.",
-    color: "from-violet-500 to-pink-500",
-    shadow: "shadow-violet-500/20",
-  },
-  {
-    icon: Move,
-    title: "Drag & Drop",
-    description: "Reorder, add, and remove images in your gallery with intuitive drag-and-drop interactions.",
-    color: "from-emerald-500 to-teal-500",
-    shadow: "shadow-emerald-500/20",
-  },
-];
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1 },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
-};
+import { useState, useRef, useCallback } from "react";
+import { toast } from "sonner";
 
 export default function Home() {
-  const { apiKey } = useGallery();
+  const { apiKey, images, convertedPhotos, addImageFiles } = useGallery();
   const [showApiDialog, setShowApiDialog] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [recentlyAdded, setRecentlyAdded] = useState<{ url: string; name: string }[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const doneCount = convertedPhotos.filter((p) => p.status === "done").length;
+  const totalConverted = convertedPhotos.length;
+
+  const handleFiles = useCallback(async (files: FileList | File[]) => {
+    const imageFiles = Array.from(files).filter((f) =>
+      f.type.startsWith("image/")
+    );
+    if (imageFiles.length === 0) {
+      toast.error("Please select image files only");
+      return;
+    }
+
+    setIsAdding(true);
+    try {
+      // Create preview URLs for the confirmation panel
+      const previews = imageFiles.map((file) => ({
+        url: URL.createObjectURL(file),
+        name: file.name,
+      }));
+
+      // Add as data URLs for persistence
+      await addImageFiles(imageFiles);
+      
+      setRecentlyAdded(previews);
+      toast.success(`Added ${imageFiles.length} photo${imageFiles.length > 1 ? "s" : ""} to gallery`);
+
+      // Clean up blob URLs and clear preview after 4 seconds
+      setTimeout(() => {
+        previews.forEach(p => URL.revokeObjectURL(p.url));
+        setRecentlyAdded([]);
+      }, 4000);
+    } finally {
+      setIsAdding(false);
+    }
+  }, [addImageFiles]);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      handleFiles(e.dataTransfer.files);
+    },
+    [handleFiles]
+  );
 
   return (
-    <div className="container">
-      {/* Hero Section */}
-      <motion.section
-        className="text-center pt-4 pb-12 sm:pt-8 sm:pb-16"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        <motion.div variants={itemVariants} className="mb-6">
-          <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass text-xs font-semibold text-blue-600 tracking-wide uppercase">
-            <Sparkles className="w-3.5 h-3.5" />
-            Powered by NanoBanana AI
-          </span>
-        </motion.div>
+    <div className="container max-w-2xl mx-auto px-4">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files) handleFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
 
-        <motion.h1
-          variants={itemVariants}
-          className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-slate-800 leading-tight tracking-tight mb-4"
+      {/* Greeting */}
+      <div className="mb-5">
+        <h1 className="text-xl font-bold text-slate-800 mb-0.5">
+          NanoBanana Gallery
+        </h1>
+        <p className="text-slate-600 text-sm">
+          Convert and organize your photos with AI.
+        </p>
+      </div>
+
+      {/* Quick Actions — 3 cards */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <Link href="/convert">
+          <div className="glass rounded-2xl p-4 card-shadow hover:card-shadow-hover transition-all cursor-pointer group active:scale-[0.97]">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-3 shadow-lg shadow-blue-500/20 group-hover:shadow-blue-500/30 transition-shadow">
+              <Upload className="w-5 h-5 text-white" />
+            </div>
+            <h3 className="text-xs font-semibold text-slate-700 mb-0.5">Convert</h3>
+            <p className="text-[10px] text-slate-600 leading-tight">AI transform</p>
+          </div>
+        </Link>
+
+        {/* Add Photos — opens file picker, adds directly to gallery */}
+        <div
+          className={`glass rounded-2xl p-4 card-shadow hover:card-shadow-hover transition-all cursor-pointer group active:scale-[0.97] ${
+            isDragOver ? "ring-2 ring-emerald-400 bg-emerald-50/30" : ""
+          } ${isAdding ? "opacity-70 pointer-events-none" : ""}`}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={handleDrop}
         >
-          Transform Your Photos
-          <br />
-          <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent">
-            with AI Magic
-          </span>
-        </motion.h1>
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mb-3 shadow-lg shadow-emerald-500/20 group-hover:shadow-emerald-500/30 transition-shadow">
+            <ImagePlus className="w-5 h-5 text-white" />
+          </div>
+          <h3 className="text-xs font-semibold text-slate-700 mb-0.5">Add Photos</h3>
+          <p className="text-[10px] text-slate-600 leading-tight">To gallery</p>
+        </div>
 
-        <motion.p
-          variants={itemVariants}
-          className="text-lg sm:text-xl text-slate-500 max-w-2xl mx-auto mb-8 leading-relaxed"
+        <Link href="/gallery">
+          <div className="glass rounded-2xl p-4 card-shadow hover:card-shadow-hover transition-all cursor-pointer group active:scale-[0.97]">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center mb-3 shadow-lg shadow-violet-500/20 group-hover:shadow-violet-500/30 transition-shadow">
+              <Images className="w-5 h-5 text-white" />
+            </div>
+            <h3 className="text-xs font-semibold text-slate-700 mb-0.5">Gallery</h3>
+            <p className="text-[10px] text-slate-600 leading-tight">
+              {images.length > 0 ? `${images.length} photos` : "View photos"}
+            </p>
+          </div>
+        </Link>
+      </div>
+
+      {/* Recently Added Confirmation */}
+      <AnimatePresence>
+        {recentlyAdded.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: "auto" }}
+            exit={{ opacity: 0, y: -10, height: 0 }}
+            className="mb-4 overflow-hidden"
+          >
+            <div className="glass rounded-2xl p-4 card-shadow border border-emerald-200/50">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                  <span className="text-sm font-semibold text-slate-700">
+                    {recentlyAdded.length} photo{recentlyAdded.length > 1 ? "s" : ""} added
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link href="/gallery">
+                    <span className="text-xs font-medium text-blue-500 hover:text-blue-600 cursor-pointer">
+                      View in Gallery
+                    </span>
+                  </Link>
+                  <button
+                    onClick={() => setRecentlyAdded([])}
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100/50 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
+                {recentlyAdded.slice(0, 6).map((img, i) => (
+                  <div key={i} className="w-14 h-14 rounded-lg overflow-hidden shrink-0">
+                    <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                  </div>
+                ))}
+                {recentlyAdded.length > 6 && (
+                  <div className="w-14 h-14 rounded-lg bg-slate-100/60 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-slate-400">+{recentlyAdded.length - 6}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Status Cards */}
+      <div className="space-y-3 mb-6">
+        {/* API Status */}
+        <div
+          className="glass rounded-2xl p-4 card-shadow flex items-center justify-between cursor-pointer active:scale-[0.99] transition-transform"
+          onClick={() => setShowApiDialog(true)}
         >
-          Batch convert photos using the NanoBanana API, then organize them in a
-          beautiful, editable gallery with customizable grid layouts.
-        </motion.p>
-
-        <motion.div variants={itemVariants} className="flex flex-wrap items-center justify-center gap-3">
-          <Link href="/convert">
-            <Button
-              size="lg"
-              className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 rounded-xl px-6 h-12 text-base font-semibold"
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                apiKey
+                  ? "bg-emerald-50 text-emerald-500"
+                  : "bg-amber-50 text-amber-500"
+              }`}
             >
-              <Upload className="w-5 h-5 mr-2" />
-              Start Converting
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          </Link>
-          <Link href="/gallery">
-            <Button
-              size="lg"
-              variant="outline"
-              className="glass rounded-xl px-6 h-12 text-base font-semibold text-slate-700 hover:bg-white/60"
-            >
-              <Images className="w-5 h-5 mr-2" />
-              View Gallery
-            </Button>
-          </Link>
-          {!apiKey && (
-            <Button
-              size="lg"
-              variant="outline"
-              className="glass rounded-xl px-6 h-12 text-base font-semibold text-amber-600 border-amber-300/50 hover:bg-amber-50/50"
-              onClick={() => setShowApiDialog(true)}
-            >
-              Set API Key
-            </Button>
+              {apiKey ? (
+                <CheckCircle2 className="w-5 h-5" />
+              ) : (
+                <Key className="w-5 h-5" />
+              )}
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-slate-700">
+                {apiKey ? "API Connected" : "API Key Required"}
+              </h4>
+              <p className="text-xs text-slate-600">
+                {apiKey
+                  ? "Tap to manage your API key"
+                  : "Tap to set up your API key"}
+              </p>
+            </div>
+          </div>
+          {apiKey ? (
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50" />
+          ) : (
+            <ArrowRight className="w-4 h-4 text-slate-300" />
           )}
-        </motion.div>
-      </motion.section>
-
-      {/* Hero Illustration */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.6, delay: 0.3 }}
-        className="max-w-4xl mx-auto mb-16 sm:mb-20"
-      >
-        <div className="glass rounded-3xl p-3 card-shadow">
-          <img
-            src={HERO_IMAGE}
-            alt="AI Photo Conversion"
-            className="w-full rounded-2xl object-cover"
-            loading="eager"
-          />
         </div>
-      </motion.div>
 
-      {/* Features Grid */}
-      <motion.section
-        className="pb-16 sm:pb-20"
-        variants={containerVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-50px" }}
-      >
-        <motion.div variants={itemVariants} className="text-center mb-10">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-3">
-            Everything You Need
-          </h2>
-          <p className="text-slate-500 max-w-lg mx-auto">
-            A complete workflow from batch upload to gallery presentation.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-          {features.map((feature, i) => (
-            <motion.div
-              key={feature.title}
-              variants={itemVariants}
-              whileHover={{ y: -4, transition: { duration: 0.2 } }}
-              className="glass rounded-2xl p-5 sm:p-6 card-shadow hover:card-shadow-hover transition-shadow"
-            >
-              <div
-                className={`w-11 h-11 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 shadow-lg ${feature.shadow}`}
-              >
-                <feature.icon className="w-5 h-5 text-white" />
-              </div>
-              <h3 className="text-base font-bold text-slate-800 mb-2">{feature.title}</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">{feature.description}</p>
-            </motion.div>
-          ))}
-        </div>
-      </motion.section>
-
-      {/* How It Works */}
-      <motion.section
-        className="pb-16 sm:pb-20"
-        variants={containerVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-50px" }}
-      >
-        <motion.div variants={itemVariants} className="text-center mb-10">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-3">
-            How It Works
-          </h2>
-          <p className="text-slate-500 max-w-lg mx-auto">
-            Three simple steps to transform and organize your photos.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
-          {[
-            {
-              step: "01",
-              title: "Upload Photos",
-              description: "Drag and drop or select multiple photos for batch processing.",
-              image: UPLOAD_IMAGE,
-            },
-            {
-              step: "02",
-              title: "AI Convert",
-              description: "Enter a prompt and let NanoBanana AI transform all your photos.",
-              image: HERO_IMAGE,
-            },
-            {
-              step: "03",
-              title: "Gallery View",
-              description: "Browse, organize, and manage your converted images in a beautiful gallery.",
-              image: GALLERY_IMAGE,
-            },
-          ].map((item) => (
-            <motion.div
-              key={item.step}
-              variants={itemVariants}
-              whileHover={{ y: -4 }}
-              className="glass rounded-2xl overflow-hidden card-shadow hover:card-shadow-hover transition-shadow"
-            >
-              <div className="aspect-[4/3] overflow-hidden">
-                <img
-                  src={item.image}
-                  alt={item.title}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              </div>
-              <div className="p-5 sm:p-6">
-                <span className="text-xs font-bold text-blue-500 tracking-wider uppercase">
-                  Step {item.step}
-                </span>
-                <h3 className="text-lg font-bold text-slate-800 mt-1 mb-2">{item.title}</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">{item.description}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </motion.section>
-
-      {/* CTA */}
-      <motion.section
-        className="pb-16"
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.5 }}
-      >
-        <div className="glass-strong rounded-3xl p-8 sm:p-12 text-center card-shadow">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-3">
-            Ready to Transform Your Photos?
-          </h2>
-          <p className="text-slate-500 mb-6 max-w-md mx-auto">
-            Get started with your Magic Hour API key and begin converting photos in seconds.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/convert">
-              <Button
-                size="lg"
-                className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 rounded-xl px-8 h-12 text-base font-semibold"
-              >
-                Get Started
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </Link>
-            <a href="https://magichour.ai/api/nano-banana" target="_blank" rel="noopener noreferrer">
-              <Button
-                size="lg"
-                variant="outline"
-                className="glass rounded-xl px-6 h-12 text-base font-semibold text-slate-700 hover:bg-white/60"
-              >
-                Get API Key
-              </Button>
-            </a>
+        {/* Gallery Stats */}
+        <div className="glass rounded-2xl p-4 card-shadow">
+          <div className="grid grid-cols-3 divide-x divide-slate-200/50">
+            <div className="text-center px-3">
+              <div className="text-xl font-bold text-slate-700">{images.length}</div>
+              <div className="text-[11px] text-slate-600 font-medium">In Gallery</div>
+            </div>
+            <div className="text-center px-3">
+              <div className="text-xl font-bold text-slate-700">{doneCount}</div>
+              <div className="text-[11px] text-slate-600 font-medium">Converted</div>
+            </div>
+            <div className="text-center px-3">
+              <div className="text-xl font-bold text-slate-700">{totalConverted > 0 ? Math.round((doneCount / totalConverted) * 100) : 0}%</div>
+              <div className="text-[11px] text-slate-600 font-medium">Success</div>
+            </div>
           </div>
         </div>
-      </motion.section>
+      </div>
+
+      {/* Recent Gallery Preview */}
+      {images.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-slate-600">Recent Photos</h3>
+            <Link href="/gallery">
+              <span className="text-xs font-medium text-blue-500 hover:text-blue-600 cursor-pointer">
+                View all
+              </span>
+            </Link>
+          </div>
+          <div className="grid grid-cols-4 gap-1.5 rounded-2xl overflow-hidden">
+            {images.slice(-8).reverse().map((img) => (
+              <div key={img.id} className="aspect-square overflow-hidden">
+                <img
+                  src={img.url}
+                  alt={img.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Getting Started */}
+      {images.length === 0 && !apiKey && (
+        <div className="glass rounded-2xl p-5 card-shadow">
+          <h3 className="text-sm font-semibold text-slate-700 mb-3">Getting Started</h3>
+          <div className="space-y-3">
+            {[
+              { step: 1, text: "Set up your Gemini API key", done: !!apiKey },
+              { step: 2, text: "Upload photos to batch convert", done: false },
+              { step: 3, text: "View and organize in your gallery", done: false },
+            ].map(({ step, text, done }) => (
+              <div key={step} className="flex items-center gap-3">
+                <div
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                    done
+                      ? "bg-emerald-100 text-emerald-600"
+                      : "bg-slate-100 text-slate-400"
+                  }`}
+                >
+                  {done ? <CheckCircle2 className="w-4 h-4" /> : step}
+                </div>
+                <span
+                  className={`text-sm ${
+                    done ? "text-slate-400 line-through" : "text-slate-600"
+                  }`}
+                >
+                  {text}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <ApiKeyDialog open={showApiDialog} onOpenChange={setShowApiDialog} />
     </div>
