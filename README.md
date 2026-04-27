@@ -23,43 +23,44 @@ PixelBoard lets you upload photos, generate or edit images with Gemini, and orga
 ## Requirements
 
 - Node.js 20+ recommended
-- `pnpm` as package manager
+- `pnpm` as package manager (or use `npx pnpm` if `pnpm` is not globally installed)
 
 ## Setup
 
 1. Install dependencies:
 
 ```bash
-pnpm install
+npx pnpm install
 ```
 
 2. Run the app in development:
 
-```bash
-pnpm dev
+```powershell
+$env:NODE_ENV='development'
+npx pnpm exec tsx watch server/_core/index.ts
 ```
 
 3. Build for production:
 
 ```bash
-pnpm build
+npx pnpm build
 ```
 
 4. Start the production server:
 
 ```bash
-pnpm start
+npx pnpm start
 ```
 
 ## Available scripts
 
-- `pnpm dev` - Start development server with hot reload
-- `pnpm build` - Build the client app and bundle the server
-- `pnpm start` - Run the production server from `dist`
-- `pnpm check` - TypeScript type check
-- `pnpm format` - Format files with Prettier
-- `pnpm test` - Run Vitest
-- `pnpm db:push` - Run Drizzle kit generate and migrate (database helper scripts)
+- `npx pnpm dev` - Start development server with hot reload (may fail on Windows due to `NODE_ENV=...` shell syntax)
+- `npx pnpm build` - Build the client app and bundle the server
+- `npx pnpm start` - Run the production server from `dist`
+- `npx pnpm check` - TypeScript type check
+- `npx pnpm format` - Format files with Prettier
+- `npx pnpm test` - Run Vitest
+- `npx pnpm db:push` - Run Drizzle kit generate and migrate (database helper scripts)
 
 ## Gemini API key
 
@@ -74,8 +75,8 @@ The backend proxy sends requests to Gemini via `server/geminiProxy.ts`.
 
 ## Local development flow
 
-1. Start `pnpm dev`
-2. Open `http://localhost:4173` (or the port shown in the terminal)
+1. Start PowerShell and run `$env:NODE_ENV='development'; npx pnpm exec tsx watch server/_core/index.ts`
+2. Open `http://localhost:3000` (or the port shown in the terminal)
 3. Add photos on the Home page
 4. Set your Gemini API key using the dialog
 5. Convert images on the Batch Convert page
