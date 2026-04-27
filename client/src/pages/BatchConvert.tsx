@@ -249,7 +249,7 @@ export default function BatchConvert() {
     const base64 = await fileToBase64(photo.file);
 
     const result = await generateMutation.mutateAsync({
-      apiKey,
+      apiKey: apiKey || undefined,
       prompt: currentPrompt,
       imageBase64: base64,
       imageMimeType: photo.file.type,
@@ -259,10 +259,6 @@ export default function BatchConvert() {
   };
 
   const convertPhotos = async () => {
-    if (!apiKey) {
-      setShowApiDialog(true);
-      return;
-    }
     if (photos.length === 0) {
       toast.error("Please upload some photos first");
       return;
@@ -1163,51 +1159,6 @@ export default function BatchConvert() {
                 </motion.div>
               ))}
             </AnimatePresence>
-          </div>
-        </motion.div>
-      )}
-
-      {/* No API Key Warning */}
-      {!apiKey && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass rounded-2xl p-5 card-shadow border border-amber-200/50"
-        >
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-              <Key className="w-5 h-5 text-amber-600" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-700 mb-1">
-                API Key Required
-              </h3>
-              <p className="text-sm text-slate-500 mb-3">
-                You need a Gemini API key to use the NanoBanana conversion
-                features. Get a free key to start.
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={() => setShowApiDialog(true)}
-                  className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl h-9 px-4 text-sm font-semibold"
-                >
-                  Set API Key
-                </Button>
-                <a
-                  href="https://aistudio.google.com/apikey"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="glass rounded-xl text-slate-600 hover:bg-white/60"
-                  >
-                    Get Free Key
-                  </Button>
-                </a>
-              </div>
-            </div>
           </div>
         </motion.div>
       )}
