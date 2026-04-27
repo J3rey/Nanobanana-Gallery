@@ -19,11 +19,14 @@ import {
 } from "lucide-react";
 import { useGallery } from "@/contexts/GalleryContext";
 import ApiKeyDialog from "@/components/ApiKeyDialog";
+import { trpc } from "@/lib/trpc";
 import { useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
 
 export default function Home() {
   const { apiKey, images, convertedPhotos, addImageFiles } = useGallery();
+  const { data: serverKeyStatus } = trpc.gemini.serverKeyStatus.useQuery();
+  const serverKeyConfigured = serverKeyStatus?.configured ?? true;
   const [showApiDialog, setShowApiDialog] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [recentlyAdded, setRecentlyAdded] = useState<{ url: string; name: string }[]>([]);
@@ -202,7 +205,9 @@ export default function Home() {
               className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                 apiKey
                   ? "bg-emerald-50 text-emerald-500"
-                  : "bg-amber-50 text-amber-500"
+                  : serverKeyConfigured
+                    ? "bg-blue-50 text-blue-400"
+                    : "bg-amber-50 text-amber-500"
               }`}
             >
               {apiKey ? (
@@ -213,19 +218,27 @@ export default function Home() {
             </div>
             <div>
               <h4 className="text-sm font-semibold text-slate-700">
-                {apiKey ? "API Connected" : "API Key Required"}
+                {apiKey
+                  ? "Override API Key Active"
+                  : serverKeyConfigured
+                    ? "API Ready"
+                    : "API Unavailable"}
               </h4>
               <p className="text-xs text-slate-600">
                 {apiKey
-                  ? "Tap to manage your API key"
-                  : "Tap to set up your API key"}
+                  ? "Tap to manage your override key"
+                  : serverKeyConfigured
+                    ? "Using server default · Tap to override"
+                    : "No server key configured · Tap to add your own"}
               </p>
             </div>
           </div>
           {apiKey ? (
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50" />
+          ) : serverKeyConfigured ? (
+            <div className="w-2.5 h-2.5 rounded-full bg-blue-300" />
           ) : (
-            <ArrowRight className="w-4 h-4 text-slate-300" />
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
           )}
         </div>
 
@@ -274,14 +287,13 @@ export default function Home() {
       )}
 
       {/* Getting Started */}
-      {images.length === 0 && !apiKey && (
+      {images.length === 0 && (
         <div className="glass rounded-2xl p-5 card-shadow">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Getting Started</h3>
           <div className="space-y-3">
             {[
-              { step: 1, text: "Set up your Gemini API key", done: !!apiKey },
-              { step: 2, text: "Upload photos to batch convert", done: false },
-              { step: 3, text: "View and organize in your gallery", done: false },
+              { step: 1, text: "Upload photos to batch convert", done: false },
+              { step: 2, text: "View and organize in your gallery", done: false },
             ].map(({ step, text, done }) => (
               <div key={step} className="flex items-center gap-3">
                 <div

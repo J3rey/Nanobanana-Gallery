@@ -59,8 +59,7 @@ export default function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) 
       setShowKey(false);
       setShowRemoveConfirm(false);
       setValidationResult({ status: "idle" });
-      // If no key exists, go straight to edit mode
-      setMode(apiKey ? "view" : "edit");
+      setMode("view");
     }
   }, [open, apiKey]);
 
@@ -139,41 +138,54 @@ export default function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) 
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
               <Key className="w-4 h-4 text-white" />
             </div>
-            Gemini API Key
+            Override API Key (optional)
           </DialogTitle>
           <DialogDescription className="text-slate-500">
             {apiKey && mode === "view"
-              ? "Manage your API key below."
-              : "Enter your Google AI Studio API key. We'll verify it before saving."}
+              ? "Manage your override key below. Leave empty to use the server default."
+              : "Optionally provide your own Google AI Studio key. Leave empty to use the server default."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 mt-2">
           {/* VIEW MODE — show current key with actions */}
-          {apiKey && mode === "view" && !showRemoveConfirm && (
+          {mode === "view" && !showRemoveConfirm && (
             <>
               {/* Current key display */}
               <div className="bg-slate-50/80 rounded-xl p-3.5 border border-slate-200/50">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                    Current Key
+                    Override Key
                   </span>
                   <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
-                    <span className="text-[11px] font-medium text-emerald-600">Active</span>
+                    {apiKey ? (
+                      <>
+                        <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+                        <span className="text-[11px] font-medium text-emerald-600">Active</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-2 h-2 rounded-full bg-slate-300" />
+                        <span className="text-[11px] font-medium text-slate-400">Using server default</span>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <code className="text-sm font-mono text-slate-600 flex-1 truncate">
-                    {showKey ? apiKey : maskedKey}
-                  </code>
-                  <button
-                    onClick={() => setShowKey(!showKey)}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-                  >
-                    {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
+                {apiKey ? (
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm font-mono text-slate-600 flex-1 truncate">
+                      {showKey ? apiKey : maskedKey}
+                    </code>
+                    <button
+                      onClick={() => setShowKey(!showKey)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                    >
+                      {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">No override key set</p>
+                )}
               </div>
 
               {/* Action buttons */}
@@ -187,16 +199,18 @@ export default function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) 
                   className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl h-10 font-semibold"
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  Change Key
+                  {apiKey ? "Change Key" : "Set Override Key"}
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowRemoveConfirm(true)}
-                  className="glass rounded-xl h-10 text-red-500 hover:text-red-600 hover:bg-red-50/50 border-red-200/50"
-                >
-                  <Trash2 className="w-4 h-4 mr-1.5" />
-                  Remove
-                </Button>
+                {apiKey && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowRemoveConfirm(true)}
+                    className="glass rounded-xl h-10 text-red-500 hover:text-red-600 hover:bg-red-50/50 border-red-200/50"
+                  >
+                    <Trash2 className="w-4 h-4 mr-1.5" />
+                    Remove
+                  </Button>
+                )}
               </div>
             </>
           )}
@@ -209,7 +223,7 @@ export default function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) 
                 <span className="text-sm font-semibold text-red-700">Remove API Key?</span>
               </div>
               <p className="text-xs text-red-600/80 mb-3">
-                This will remove your stored API key. You won't be able to convert photos until you add a new one.
+                This will remove your override API key. The app will fall back to the server default key.
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -232,19 +246,16 @@ export default function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) 
           {/* EDIT MODE — enter new key */}
           {mode === "edit" && !showRemoveConfirm && (
             <>
-              {/* Back button if they have a key and want to cancel */}
-              {apiKey && (
-                <button
-                  onClick={() => {
-                    setMode("view");
-                    setValue("");
-                    setValidationResult({ status: "idle" });
-                  }}
-                  className="text-xs text-blue-500 hover:text-blue-600 font-medium transition-colors"
-                >
-                  ← Back to current key
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  setMode("view");
+                  setValue("");
+                  setValidationResult({ status: "idle" });
+                }}
+                className="text-xs text-blue-500 hover:text-blue-600 font-medium transition-colors"
+              >
+                ← Back
+              </button>
 
               <div className="relative">
                 <Input
@@ -342,8 +353,9 @@ export default function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) 
           )}
 
           <p className="text-xs text-slate-400 leading-relaxed">
-            Your API key is stored locally in your browser and sent to the Gemini API for image generation.
-            Get a free API key from{" "}
+            An override key is stored locally in your browser only for this session and is never
+            sent to the server except to proxy Gemini requests. Leave empty to use the server
+            default. Get a free key from{" "}
             <a
               href="https://aistudio.google.com/apikey"
               target="_blank"

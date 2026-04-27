@@ -8,8 +8,10 @@
  * This is a synchronous API — a single POST returns the generated image
  * as base64 inline data. No polling required.
  *
- * The user's Gemini API key is passed from the client per-request
- * (stored in their localStorage). This server just forwards it.
+ * Key resolution order:
+ *   1. User-supplied key (sent per-request, never stored server-side)
+ *   2. Server default key from GEMINI_DEFAULT_API_KEY env var
+ * The effective key is never returned to the client.
  */
 
 import { z } from "zod";
@@ -36,7 +38,7 @@ export const geminiRouter = router({
   generate: publicProcedure
     .input(
       z.object({
-        apiKey: z.string().min(1, "API key is required"),
+        apiKey: z.string().optional(),
         prompt: z.string().min(1, "Prompt is required"),
         imageBase64: z.string().optional(),
         imageMimeType: z.string().default("image/jpeg"),
@@ -44,7 +46,35 @@ export const geminiRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const { apiKey, prompt, imageBase64, imageMimeType, model } = input;
+      const { prompt, imageBase64, imageMimeType, model } = input;
+
+      // Resolve the effective API key — user key takes precedence over server default
+      let effectiveKey: string;
+      if (input.apiKey && input.apiKey.trim().length > 0) {
+        const trimmed = input.apiKey.trim();
+        // Basic format check: Google API keys start with "AIza" and are ~39 chars
+        if (!/^AIza[A-Za-z0-9_-]{30,}$/.test(trimmed)) {
+          return {
+            ok: false,
+            status: 400,
+            data: { message: "Invalid API key format. Gemini keys should start with 'AIza'." },
+          };
+        }
+        effectiveKey = trimmed;
+      } else {
+        const serverKey = process.env.GEMINI_DEFAULT_API_KEY;
+        if (!serverKey) {
+          return {
+            ok: false,
+            status: 400,
+            data: {
+              message:
+                "No API key available. Please provide your own Gemini API key or contact the server administrator.",
+            },
+          };
+        }
+        effectiveKey = serverKey;
+      }
 
       try {
         // Build the parts array
@@ -83,7 +113,7 @@ export const geminiRouter = router({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-goog-api-key": apiKey,
+            "x-goog-api-key": effectiveKey,
           },
           body: JSON.stringify(requestBody),
           signal: controller.signal,
@@ -186,6 +216,14 @@ export const geminiRouter = router({
         };
       }
     }),
+
+  /**
+   * Returns whether the server has a default Gemini API key configured.
+   * Never exposes the key value — only a boolean.
+   */
+  serverKeyStatus: publicProcedure.query(() => {
+    return { configured: !!process.env.GEMINI_DEFAULT_API_KEY };
+  }),
 
   /**
    * Validate a Gemini API key by making a lightweight test request.
