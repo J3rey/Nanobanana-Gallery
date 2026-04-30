@@ -1071,8 +1071,8 @@ export default function BatchConvert() {
               {doneCount > 0 && (
                 <>
                   <Button
-                    onClick={() => {
-                      transferAllToGallery();
+                    onClick={async () => {
+                      await transferAllToGallery();
                       toast.success(`Transferred ${doneCount} photos to gallery`);
                     }}
                     className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-full h-9 px-4 text-sm font-semibold shadow-lg shadow-emerald-500/25"
