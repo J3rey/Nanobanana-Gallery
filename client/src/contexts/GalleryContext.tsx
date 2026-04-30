@@ -1,5 +1,5 @@
 /* 
- * NanoBanana Gallery — Global Gallery Context
+ * PixelBoard — Global Gallery Context
  * - localStorage persistence for gallery images, grid size, and API key
  * - Images stored as data URLs for persistence (blob URLs don't survive reload)
  * - Lazy API key validation (validated on first real conversion, not upfront)
@@ -10,11 +10,11 @@ import type { GalleryImage, GridSize, ConvertedPhoto, PromptHistoryItem } from "
 import { nanoid } from "nanoid";
 
 const STORAGE_KEYS = {
-  images: "nanobanana-gallery-images",
-  gridSize: "nanobanana-grid-size",
-  apiKey: "nanobanana-api-key",
-  promptHistory: "nanobanana-prompt-history",
-  convertedPhotos: "nanobanana-converted-photos",
+  images: "pixelboard-images",
+  gridSize: "pixelboard-grid-size",
+  apiKey: "pixelboard-api-key",
+  promptHistory: "pixelboard-prompt-history",
+  convertedPhotos: "pixelboard-converted-photos",
 };
 
 const MAX_PROMPT_HISTORY = 50;

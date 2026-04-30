@@ -1,5 +1,5 @@
 /* 
- * NanoBanana Gallery — Batch Convert Page
+ * PixelBoard — Batch Convert Page
  * Design: Aero Glass — iOS-inspired glassmorphism
  * - Drag & drop upload zone with animated border
  * - Prompt input with style presets

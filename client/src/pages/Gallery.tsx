@@ -1,5 +1,5 @@
 /* 
- * NanoBanana Gallery — Gallery Page (Pinterest Masonry)
+ * PixelBoard — Gallery Page (Pinterest Masonry)
  * Design: Aero Glass — iOS-inspired glassmorphism
  * - Pinterest-style masonry preserving natural image aspect ratios
  * - Smooth pinch/scroll zoom that changes column count (2 ↔ 3 ↔ 4)

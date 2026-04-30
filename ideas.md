@@ -1,7 +1,7 @@
-# NanoBanana Gallery - Design Brainstorm
+# PixelBoard - Design Brainstorm
 
 ## Context
-A web app for batch photo conversion via the NanoBanana API with an editable, scalable gallery. Reference UI is a clean, modern blue-themed mobile app (DailyMe) with soft gradients, rounded cards, and a polished feel.
+A web app for batch photo conversion via the PixelBoard API with an editable, scalable gallery. Reference UI is a clean, modern blue-themed mobile app (DailyMe) with soft gradients, rounded cards, and a polished feel.
 
 ---
 

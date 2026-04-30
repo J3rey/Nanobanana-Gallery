@@ -2,7 +2,7 @@
 
 - [x] Basic homepage layout (app dashboard)
 - [x] Bottom tab bar navigation
-- [x] Batch Convert page with NanoBanana API integration
+- [x] Batch Convert page with PixelBoard API integration
 - [x] Pinterest masonry gallery with smooth zoom
 - [x] Edit mode with long-press delete (jiggle animation)
 - [x] Add photos from gallery page

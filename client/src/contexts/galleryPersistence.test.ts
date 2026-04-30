@@ -4,11 +4,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // the persistence helpers work correctly
 
 const STORAGE_KEYS = {
-  images: "nanobanana-gallery-images",
-  gridSize: "nanobanana-grid-size",
-  apiKey: "nanobanana-api-key",
-  promptHistory: "nanobanana-prompt-history",
-  convertedPhotos: "nanobanana-converted-photos",
+  images: "pixelboard-images",
+  gridSize: "pixelboard-grid-size",
+  apiKey: "pixelboard-api-key",
+  promptHistory: "pixelboard-prompt-history",
+  convertedPhotos: "pixelboard-converted-photos",
 };
 
 // Replicate the helpers from GalleryContext
@@ -49,7 +49,7 @@ describe("Gallery Persistence", () => {
   });
 
   it("should have convertedPhotos in STORAGE_KEYS", () => {
-    expect(STORAGE_KEYS.convertedPhotos).toBe("nanobanana-converted-photos");
+    expect(STORAGE_KEYS.convertedPhotos).toBe("pixelboard-converted-photos");
   });
 
   it("should load empty array when no convertedPhotos in storage", () => {

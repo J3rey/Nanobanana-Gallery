@@ -1,5 +1,5 @@
 /* 
- * NanoBanana Gallery — API Key Dialog
+ * PixelBoard — API Key Dialog
  * Design: Aero Glass — frosted glass dialog
  * - View current key (masked)
  * - Change key with validation

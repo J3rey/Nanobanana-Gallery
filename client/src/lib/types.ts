@@ -1,5 +1,5 @@
 /* 
- * NanoBanana Gallery — Type Definitions
+ * PixelBoard — Type Definitions
  * Design: Aero Glass — iOS-inspired glassmorphism
  */
 
