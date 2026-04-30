@@ -1,5 +1,8 @@
 {
   "permissions": {
-    "allow": ["Bash(pnpm check *)"]
+    "allow": [
+      "Bash(pnpm check *)",
+      "PowerShell(Stop-Process *)"
+    ]
   }
 }
