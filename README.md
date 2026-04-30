@@ -23,43 +23,43 @@ PixelBoard lets you upload photos, generate or edit images with Gemini, and orga
 ## Requirements
 
 - Node.js 20+ recommended
-- `pnpm` as package manager
+- `npm` as package manager
 
 ## Setup
 
 1. Install dependencies:
 
 ```bash
-pnpm install
+npm install
 ```
 
 2. Run the app in development:
 
 ```bash
-pnpm dev
+npm run dev
 ```
 
 3. Build for production:
 
 ```bash
-pnpm build
+npm run build
 ```
 
 4. Start the production server:
 
 ```bash
-pnpm start
+npm run start
 ```
 
 ## Available scripts
 
-- `pnpm dev` - Start development server with hot reload
-- `pnpm build` - Build the client app and bundle the server
-- `pnpm start` - Run the production server from `dist`
-- `pnpm check` - TypeScript type check
-- `pnpm format` - Format files with Prettier
-- `pnpm test` - Run Vitest
-- `pnpm db:push` - Run Drizzle kit generate and migrate (database helper scripts)
+- `npm run dev` - Start development server with hot reload
+- `npm run build` - Build the client app and bundle the server
+- `npm run start` - Run the production server from `dist`
+- `npm run check` - TypeScript type check
+- `npm run format` - Format files with Prettier
+- `npm run test` - Run Vitest
+- `npm run db:push` - Run Drizzle kit generate and migrate (database helper scripts)
 
 ## Gemini API key
 
@@ -74,7 +74,7 @@ The backend proxy sends requests to Gemini via `server/geminiProxy.ts`.
 
 ## Local development flow
 
-1. Start `pnpm dev`
+1. Start `npm run dev`
 2. Open `http://localhost:4173` (or the port shown in the terminal)
 3. Add photos on the Home page
 4. Set your Gemini API key using the dialog

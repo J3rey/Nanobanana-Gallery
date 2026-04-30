@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-**Package manager:** pnpm is preferred. In shell environments where pnpm is unavailable, use `npm run` as a drop-in replacement — all scripts are identical.
+**Package manager:** npm. Use npm for installs and scripts.
 
 ```powershell
 npm run dev          # Start dev server (Express + Vite HMR, port 3000)
@@ -17,17 +17,18 @@ npm run db:push      # Run Drizzle migrations (generate + migrate)
 ```
 
 Run a single test file:
+
 ```powershell
 npx vitest run server/someFile.test.ts
 ```
 
-**Shell environment:** PowerShell (Windows). Use the PowerShell tool, not Bash. `pnpm` is not on PATH — use `npm run` or `npx` instead.
+**Shell environment:** PowerShell (Windows). Use the PowerShell tool, not Bash. Use `npm run` for scripts and `npx` for one-off binaries.
 
 ## Architecture
 
 **Stack:** React 19 + TypeScript frontend, Express + tRPC v11 backend, Drizzle ORM + MySQL, Google Gemini API for AI image generation.
 
-**Package manager:** pnpm. Use pnpm for all installs.
+**Package manager:** npm. Use npm for all installs.
 
 ### Directory Layout
 
@@ -87,6 +88,6 @@ The server listens on `PORT` if set, otherwise defaults to 3000 (or the next ava
 
 ## Code Style
 
-Prettier config (`.prettierrc`): 80-char line width, 2-space indentation, trailing commas, double quotes. Run `pnpm format` before committing.
+Prettier config (`.prettierrc`): 80-char line width, 2-space indentation, trailing commas, double quotes. Run `npm run format` before committing.
 
 TypeScript strict mode is enabled. Avoid `any`; prefer types defined in `shared/types.ts` for anything crossing the client/server boundary.
