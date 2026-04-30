@@ -1,4 +1,4 @@
-/* 
+/*
  * PixelBoard — Global Gallery Context
  * - localStorage persistence for gallery images, grid size, and API key
  * - Images stored as data URLs for persistence (blob URLs don't survive reload)
@@ -8,6 +8,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import type { GalleryImage, GridSize, ConvertedPhoto, PromptHistoryItem } from "@/lib/types";
 import { nanoid } from "nanoid";
+import { toast } from "sonner";
 
 const STORAGE_KEYS = {
   images: "pixelboard-images",
@@ -15,9 +16,15 @@ const STORAGE_KEYS = {
   apiKey: "pixelboard-api-key",
   promptHistory: "pixelboard-prompt-history",
   convertedPhotos: "pixelboard-converted-photos",
+  stats: "pixelboard-stats",
 };
 
 const MAX_PROMPT_HISTORY = 50;
+
+interface PersistentStats {
+  totalConverted: number;
+  totalSuccess: number;
+}
 
 interface GalleryContextType {
   // Gallery state
@@ -30,13 +37,13 @@ interface GalleryContextType {
   removeImages: (ids: string[]) => void;
   reorderImages: (fromIndex: number, toIndex: number) => void;
   clearGallery: () => void;
-  
+
   // Converted photos (from batch conversion)
   convertedPhotos: ConvertedPhoto[];
   setConvertedPhotos: (photos: ConvertedPhoto[] | ((prev: ConvertedPhoto[]) => ConvertedPhoto[])) => void;
   transferToGallery: (photoIds: string[]) => void;
   transferAllToGallery: () => void;
-  
+
   // API Key — lazy validation (just save, validated on first real use)
   apiKey: string;
   setApiKey: (key: string) => void;
@@ -46,6 +53,10 @@ interface GalleryContextType {
   addPromptToHistory: (text: string) => void;
   togglePromptFavorite: (id: string) => void;
   removePromptFromHistory: (id: string) => void;
+
+  // Cumulative conversion stats (persisted across sessions)
+  stats: PersistentStats;
+  recordConversion: (success: number, failed: number) => void;
 }
 
 const GalleryContext = createContext<GalleryContextType | null>(null);
@@ -71,12 +82,14 @@ function loadFromStorage<T>(key: string, fallback: T): T {
   }
 }
 
-// Helper: safe JSON write to localStorage
-function saveToStorage(key: string, value: any) {
+// Helper: safe JSON write to localStorage — returns false if quota exceeded
+function saveToStorage(key: string, value: any): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch (e) {
     console.warn("localStorage write failed:", e);
+    return false;
   }
 }
 
@@ -102,6 +115,22 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
   const [promptHistory, setPromptHistory] = useState<PromptHistoryItem[]>(() =>
     loadFromStorage<PromptHistoryItem[]>(STORAGE_KEYS.promptHistory, [])
   );
+  const [stats, setStats] = useState<PersistentStats>(() =>
+    loadFromStorage<PersistentStats>(STORAGE_KEYS.stats, { totalConverted: 0, totalSuccess: 0 })
+  );
+
+  // Persist stats
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.stats, stats);
+  }, [stats]);
+
+  const recordConversion = useCallback((success: number, failed: number) => {
+    if (success === 0 && failed === 0) return;
+    setStats(prev => ({
+      totalConverted: prev.totalConverted + success + failed,
+      totalSuccess: prev.totalSuccess + success,
+    }));
+  }, []);
 
   // Persist prompt history
   useEffect(() => {
@@ -114,14 +143,12 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
     setPromptHistory(prev => {
       const existing = prev.find(p => p.text.toLowerCase() === trimmed.toLowerCase());
       if (existing) {
-        // Update existing entry
         return prev.map(p =>
           p.id === existing.id
             ? { ...p, usedAt: Date.now(), useCount: p.useCount + 1 }
             : p
         );
       }
-      // Add new entry, cap at MAX_PROMPT_HISTORY
       const newItem: PromptHistoryItem = {
         id: nanoid(),
         text: trimmed,
@@ -130,7 +157,6 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
         isFavorite: false,
       };
       const updated = [newItem, ...prev];
-      // Remove oldest non-favorites if over limit
       if (updated.length > MAX_PROMPT_HISTORY) {
         const favorites = updated.filter(p => p.isFavorite);
         const nonFavorites = updated.filter(p => !p.isFavorite);
@@ -152,12 +178,22 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
 
   // Debounced save for images (avoid writing on every tiny change)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const storageWarnedRef = useRef(false);
 
   // Persist images to localStorage (debounced)
   useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      saveToStorage(STORAGE_KEYS.images, images);
+      const ok = saveToStorage(STORAGE_KEYS.images, images);
+      if (!ok && !storageWarnedRef.current) {
+        storageWarnedRef.current = true;
+        toast.error("Storage full — some photos may not be saved after reload. Try removing unused images.", {
+          id: "storage-full",
+          duration: 6000,
+        });
+      } else if (ok) {
+        storageWarnedRef.current = false;
+      }
     }, 500);
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -169,13 +205,16 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
     saveToStorage(STORAGE_KEYS.gridSize, gridSize);
   }, [gridSize]);
 
-  // Persist converted photos (debounced — they can contain large base64 data)
+  // Persist converted photos (debounced)
   const convertedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (convertedSaveRef.current) clearTimeout(convertedSaveRef.current);
     convertedSaveRef.current = setTimeout(() => {
-      // Only persist completed or errored photos (not in-progress ones)
-      const persistable = convertedPhotos.filter(p => p.status === 'done' || p.status === 'error');
+      // Only persist completed or errored photos.
+      // Clear originalPreview — it's a blob URL that dies on page reload.
+      const persistable = convertedPhotos
+        .filter(p => p.status === 'done' || p.status === 'error')
+        .map(p => ({ ...p, originalPreview: '' }));
       saveToStorage(STORAGE_KEYS.convertedPhotos, persistable);
     }, 1000);
     return () => {
@@ -302,6 +341,8 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
         addPromptToHistory,
         togglePromptFavorite,
         removePromptFromHistory,
+        stats,
+        recordConversion,
       }}
     >
       {children}

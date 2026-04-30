@@ -24,7 +24,7 @@ import { useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
 
 export default function Home() {
-  const { apiKey, images, convertedPhotos, addImageFiles } = useGallery();
+  const { apiKey, images, stats, addImageFiles } = useGallery();
   const { data: serverKeyStatus } = trpc.gemini.serverKeyStatus.useQuery();
   const serverKeyConfigured = serverKeyStatus?.configured ?? true;
   const [showApiDialog, setShowApiDialog] = useState(false);
@@ -33,8 +33,7 @@ export default function Home() {
   const [isAdding, setIsAdding] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const doneCount = convertedPhotos.filter((p) => p.status === "done").length;
-  const totalConverted = convertedPhotos.length;
+  const { totalSuccess, totalConverted } = stats;
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter((f) =>
@@ -250,11 +249,11 @@ export default function Home() {
               <div className="text-[11px] text-slate-600 font-medium">In Gallery</div>
             </div>
             <div className="text-center px-3">
-              <div className="text-xl font-bold text-slate-700">{doneCount}</div>
+              <div className="text-xl font-bold text-slate-700">{totalSuccess}</div>
               <div className="text-[11px] text-slate-600 font-medium">Converted</div>
             </div>
             <div className="text-center px-3">
-              <div className="text-xl font-bold text-slate-700">{totalConverted > 0 ? Math.round((doneCount / totalConverted) * 100) : 0}%</div>
+              <div className="text-xl font-bold text-slate-700">{totalConverted > 0 ? Math.round((totalSuccess / totalConverted) * 100) : 0}%</div>
               <div className="text-[11px] text-slate-600 font-medium">Success</div>
             </div>
           </div>

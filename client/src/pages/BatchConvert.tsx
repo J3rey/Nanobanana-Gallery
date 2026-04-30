@@ -146,7 +146,7 @@ function getErrorColor(type: ApiErrorType) {
 }
 
 export default function BatchConvert() {
-  const { apiKey, convertedPhotos, setConvertedPhotos, transferAllToGallery, promptHistory, addPromptToHistory, togglePromptFavorite, removePromptFromHistory } = useGallery();
+  const { apiKey, convertedPhotos, setConvertedPhotos, transferAllToGallery, promptHistory, addPromptToHistory, togglePromptFavorite, removePromptFromHistory, recordConversion } = useGallery();
   const [showPromptHistory, setShowPromptHistory] = useState(false);
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [prompt, setPrompt] = useState("");
@@ -471,6 +471,7 @@ export default function BatchConvert() {
     }
 
     setIsConverting(false);
+    recordConversion(successCount, failCount);
 
     // Smart summary toast
     if (abortRef.current && failCount > 0) {
@@ -580,6 +581,7 @@ export default function BatchConvert() {
     }
 
     setIsConverting(false);
+    recordConversion(retrySuccess, retryFail);
 
     if (retrySuccess > 0 && retryFail === 0) {
       toast.success(`All ${retrySuccess} retries succeeded!`);
