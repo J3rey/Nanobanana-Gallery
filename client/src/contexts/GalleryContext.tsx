@@ -1,6 +1,6 @@
 /*
  * PixelBoard — Global Gallery Context
- * - localStorage persistence for gallery images, grid size, and API key
+ * - IndexedDB persistence for gallery images, grid size, and API key
  * - Images stored as data URLs for persistence (blob URLs don't survive reload)
  * - Lazy API key validation (validated on first real conversion, not upfront)
  */
@@ -22,6 +22,7 @@ import type {
 } from "@/lib/types";
 import { nanoid } from "nanoid";
 import { toast } from "sonner";
+import { idbGet, idbSet, idbRemove } from "@/lib/idb";
 
 const STORAGE_KEYS = {
   images: "pixelboard-images",
@@ -29,11 +30,6 @@ const STORAGE_KEYS = {
   apiKey: "pixelboard-api-key",
   promptHistory: "pixelboard-prompt-history",
   stats: "pixelboard-stats",
-};
-
-// Converted photos go in sessionStorage — large base64 blobs that would
-// eat into the localStorage quota shared with gallery images.
-const SESSION_KEYS = {
   convertedPhotos: "pixelboard-converted-photos",
 };
 
@@ -91,105 +87,122 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-// Helper: safe JSON parse from localStorage
-function loadFromStorage<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-// Helper: safe JSON write to localStorage — returns false if quota exceeded
-function saveToStorage(key: string, value: any): boolean {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (e) {
-    console.warn("localStorage write failed:", e);
-    return false;
-  }
-}
-
-// sessionStorage helpers for transient large data (converted photos).
-// sessionStorage has its own quota separate from localStorage, and persists
-// through page refreshes within the same browser tab.
-function loadFromSession<T>(key: string, fallback: T): T {
-  try {
-    const raw = sessionStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveToSession(key: string, value: any): void {
-  try {
-    sessionStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.warn("sessionStorage write failed:", e);
-  }
-}
-
 export function GalleryProvider({ children }: { children: ReactNode }) {
-  // Initialize from localStorage
-  const [images, setImages] = useState<GalleryImage[]>(() =>
-    loadFromStorage<GalleryImage[]>(STORAGE_KEYS.images, [])
-  );
-  const [gridSize, setGridSizeState] = useState<GridSize>(() => {
-    const stored = loadFromStorage<number>(STORAGE_KEYS.gridSize, 3);
-    return ([2, 3, 4].includes(stored) ? stored : 3) as GridSize;
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [images, setImages] = useState<GalleryImage[]>([]);
+  const [gridSize, setGridSizeState] = useState<GridSize>(3);
+  const [convertedPhotos, setConvertedPhotos] = useState<ConvertedPhoto[]>([]);
+  const [apiKey, setApiKeyState] = useState<string>("");
+  const [promptHistory, setPromptHistory] = useState<PromptHistoryItem[]>([]);
+  const [stats, setStats] = useState<PersistentStats>({
+    totalConverted: 0,
+    totalSuccess: 0,
   });
-  const [convertedPhotos, setConvertedPhotos] = useState<ConvertedPhoto[]>(() =>
-    loadFromStorage<ConvertedPhoto[]>(STORAGE_KEYS.convertedPhotos, [])
-  );
-  const [apiKey, setApiKeyState] = useState<string>(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEYS.apiKey) || "";
-    } catch {
-      return "";
-    }
-  });
-  const [promptHistory, setPromptHistory] = useState<PromptHistoryItem[]>(() =>
-    loadFromStorage<PromptHistoryItem[]>(STORAGE_KEYS.promptHistory, [])
-  );
-  const [stats, setStats] = useState<PersistentStats>(() =>
-    loadFromStorage<PersistentStats>(STORAGE_KEYS.stats, {
-      totalConverted: 0,
-      totalSuccess: 0,
-    })
-  );
 
-  // Persist stats
+  // Load all persisted data from IndexedDB on mount
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.stats, stats);
-  }, [stats]);
+    Promise.all([
+      idbGet<GalleryImage[]>(STORAGE_KEYS.images, []),
+      idbGet<number>(STORAGE_KEYS.gridSize, 3),
+      idbGet<ConvertedPhoto[]>(STORAGE_KEYS.convertedPhotos, []),
+      idbGet<string>(STORAGE_KEYS.apiKey, ""),
+      idbGet<PromptHistoryItem[]>(STORAGE_KEYS.promptHistory, []),
+      idbGet<PersistentStats>(STORAGE_KEYS.stats, {
+        totalConverted: 0,
+        totalSuccess: 0,
+      }),
+    ])
+      .then(([imgs, gs, photos, key, history, st]) => {
+        setImages(imgs);
+        setGridSizeState(([2, 3, 4].includes(gs) ? gs : 3) as GridSize);
+        // originalPreview is a blob URL — it dies on page reload, so clear it
+        setConvertedPhotos(photos.map((p) => ({ ...p, originalPreview: "" })));
+        setApiKeyState(key);
+        setPromptHistory(history);
+        setStats(st);
+      })
+      .catch(() => {
+        // IDB unavailable — start with defaults
+      })
+      .finally(() => {
+        setIsLoaded(true);
+      });
+  }, []);
+
+  // Debounced save for images
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const storageWarnedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await idbSet(STORAGE_KEYS.images, images);
+        storageWarnedRef.current = false;
+      } catch {
+        if (!storageWarnedRef.current) {
+          storageWarnedRef.current = true;
+          toast.error(
+            "Storage full — some photos may not be saved after reload. Try removing unused images.",
+            { id: "storage-full", duration: 6000 }
+          );
+        }
+      }
+    }, 500);
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [images, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    idbSet(STORAGE_KEYS.gridSize, gridSize);
+  }, [gridSize, isLoaded]);
+
+  // Debounced save for converted photos — only persist done/error, strip blob URLs
+  const convertedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (convertedSaveRef.current) clearTimeout(convertedSaveRef.current);
+    convertedSaveRef.current = setTimeout(() => {
+      const persistable = convertedPhotos
+        .filter((p) => p.status === "done" || p.status === "error")
+        .map((p) => ({ ...p, originalPreview: "" }));
+      idbSet(STORAGE_KEYS.convertedPhotos, persistable);
+    }, 1000);
+    return () => {
+      if (convertedSaveRef.current) clearTimeout(convertedSaveRef.current);
+    };
+  }, [convertedPhotos, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    idbSet(STORAGE_KEYS.stats, stats);
+  }, [stats, isLoaded]);
 
   const recordConversion = useCallback((success: number, failed: number) => {
     if (success === 0 && failed === 0) return;
-    setStats(prev => ({
+    setStats((prev) => ({
       totalConverted: prev.totalConverted + success + failed,
       totalSuccess: prev.totalSuccess + success,
     }));
   }, []);
 
-  // Persist prompt history
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.promptHistory, promptHistory);
-  }, [promptHistory]);
+    if (!isLoaded) return;
+    idbSet(STORAGE_KEYS.promptHistory, promptHistory);
+  }, [promptHistory, isLoaded]);
 
   const addPromptToHistory = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    setPromptHistory(prev => {
+    setPromptHistory((prev) => {
       const existing = prev.find(
-        p => p.text.toLowerCase() === trimmed.toLowerCase()
+        (p) => p.text.toLowerCase() === trimmed.toLowerCase()
       );
       if (existing) {
-        return prev.map(p =>
+        return prev.map((p) =>
           p.id === existing.id
             ? { ...p, usedAt: Date.now(), useCount: p.useCount + 1 }
             : p
@@ -204,8 +217,8 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
       };
       const updated = [newItem, ...prev];
       if (updated.length > MAX_PROMPT_HISTORY) {
-        const favorites = updated.filter(p => p.isFavorite);
-        const nonFavorites = updated.filter(p => !p.isFavorite);
+        const favorites = updated.filter((p) => p.isFavorite);
+        const nonFavorites = updated.filter((p) => !p.isFavorite);
         return [
           ...favorites,
           ...nonFavorites.slice(0, MAX_PROMPT_HISTORY - favorites.length),
@@ -216,63 +229,14 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const togglePromptFavorite = useCallback((id: string) => {
-    setPromptHistory(prev =>
-      prev.map(p => (p.id === id ? { ...p, isFavorite: !p.isFavorite } : p))
+    setPromptHistory((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, isFavorite: !p.isFavorite } : p))
     );
   }, []);
 
   const removePromptFromHistory = useCallback((id: string) => {
-    setPromptHistory(prev => prev.filter(p => p.id !== id));
+    setPromptHistory((prev) => prev.filter((p) => p.id !== id));
   }, []);
-
-  // Debounced save for images (avoid writing on every tiny change)
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const storageWarnedRef = useRef(false);
-
-  // Persist images to localStorage (debounced)
-  useEffect(() => {
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      const ok = saveToStorage(STORAGE_KEYS.images, images);
-      if (!ok && !storageWarnedRef.current) {
-        storageWarnedRef.current = true;
-        toast.error(
-          "Storage full — some photos may not be saved after reload. Try removing unused images.",
-          {
-            id: "storage-full",
-            duration: 6000,
-          }
-        );
-      } else if (ok) {
-        storageWarnedRef.current = false;
-      }
-    }, 500);
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    };
-  }, [images]);
-
-  // Persist grid size immediately
-  useEffect(() => {
-    saveToStorage(STORAGE_KEYS.gridSize, gridSize);
-  }, [gridSize]);
-
-  // Persist converted photos (debounced)
-  const convertedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (convertedSaveRef.current) clearTimeout(convertedSaveRef.current);
-    convertedSaveRef.current = setTimeout(() => {
-      // Only persist completed or errored photos.
-      // Clear originalPreview — it's a blob URL that dies on page reload.
-      const persistable = convertedPhotos
-        .filter(p => p.status === "done" || p.status === "error")
-        .map(p => ({ ...p, originalPreview: "" }));
-      saveToStorage(STORAGE_KEYS.convertedPhotos, persistable);
-    }, 1000);
-    return () => {
-      if (convertedSaveRef.current) clearTimeout(convertedSaveRef.current);
-    };
-  }, [convertedPhotos]);
 
   const setGridSize = useCallback((size: GridSize) => {
     setGridSizeState(size);
@@ -280,14 +244,10 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
 
   const handleSetApiKey = useCallback((key: string) => {
     setApiKeyState(key);
-    try {
-      if (key) {
-        localStorage.setItem(STORAGE_KEYS.apiKey, key);
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.apiKey);
-      }
-    } catch {
-      /* ignore */
+    if (key) {
+      idbSet(STORAGE_KEYS.apiKey, key);
+    } else {
+      idbRemove(STORAGE_KEYS.apiKey);
     }
   }, []);
 
@@ -299,7 +259,7 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
       name,
       addedAt: Date.now(),
     }));
-    setImages(prev => [...prev, ...newImages]);
+    setImages((prev) => [...prev, ...newImages]);
   }, []);
 
   // Add images from File objects — converts to data URLs for persistence
@@ -319,21 +279,21 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
       }
     }
     if (newImages.length > 0) {
-      setImages(prev => [...prev, ...newImages]);
+      setImages((prev) => [...prev, ...newImages]);
     }
   }, []);
 
   const removeImage = useCallback((id: string) => {
-    setImages(prev => prev.filter(img => img.id !== id));
+    setImages((prev) => prev.filter((img) => img.id !== id));
   }, []);
 
   const removeImages = useCallback((ids: string[]) => {
     const idSet = new Set(ids);
-    setImages(prev => prev.filter(img => !idSet.has(img.id)));
+    setImages((prev) => prev.filter((img) => !idSet.has(img.id)));
   }, []);
 
   const reorderImages = useCallback((fromIndex: number, toIndex: number) => {
-    setImages(prev => {
+    setImages((prev) => {
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
@@ -346,31 +306,31 @@ export function GalleryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const transferToGallery = useCallback((photoIds: string[]) => {
-    setConvertedPhotos(prev => {
+    setConvertedPhotos((prev) => {
       const toTransfer = prev.filter(
-        p => photoIds.includes(p.id) && p.status === "done"
+        (p) => photoIds.includes(p.id) && p.status === "done"
       );
-      const newImages: GalleryImage[] = toTransfer.map(p => ({
+      const newImages: GalleryImage[] = toTransfer.map((p) => ({
         id: nanoid(),
         url: p.convertedUrl,
         name: p.originalName + " (converted)",
         addedAt: Date.now(),
       }));
-      setImages(prevImages => [...prevImages, ...newImages]);
+      setImages((prevImages) => [...prevImages, ...newImages]);
       return prev;
     });
   }, []);
 
   const transferAllToGallery = useCallback(() => {
-    setConvertedPhotos(prev => {
-      const done = prev.filter(p => p.status === "done");
-      const newImages: GalleryImage[] = done.map(p => ({
+    setConvertedPhotos((prev) => {
+      const done = prev.filter((p) => p.status === "done");
+      const newImages: GalleryImage[] = done.map((p) => ({
         id: nanoid(),
         url: p.convertedUrl,
         name: p.originalName + " (converted)",
         addedAt: Date.now(),
       }));
-      setImages(prevImages => [...prevImages, ...newImages]);
+      setImages((prevImages) => [...prevImages, ...newImages]);
       return prev;
     });
   }, []);

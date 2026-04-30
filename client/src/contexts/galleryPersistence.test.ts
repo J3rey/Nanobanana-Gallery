@@ -1,67 +1,60 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { IDBFactory } from "fake-indexeddb";
 
-// Test that the STORAGE_KEYS includes convertedPhotos and that
-// the persistence helpers work correctly
+// Each test gets a fresh IDBFactory so the cached dbPromise is reset cleanly.
+// We re-import idb helpers via dynamic import after swapping the global.
+async function freshIdb() {
+  (globalThis as any).indexedDB = new IDBFactory();
+  // Re-load the module to reset the cached dbPromise
+  const { _resetDBForTesting, idbGet, idbSet, idbRemove } = await import(
+    "../lib/idb"
+  );
+  _resetDBForTesting();
+  return { idbGet, idbSet, idbRemove };
+}
 
-const STORAGE_KEYS = {
+const KEYS = {
   images: "pixelboard-images",
   gridSize: "pixelboard-grid-size",
   apiKey: "pixelboard-api-key",
   promptHistory: "pixelboard-prompt-history",
   convertedPhotos: "pixelboard-converted-photos",
+  stats: "pixelboard-stats",
 };
 
-// Replicate the helpers from GalleryContext
-function loadFromStorage<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveToStorage(key: string, value: any) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.warn("localStorage write failed:", e);
-  }
-}
-
-// Mock localStorage for Node environment
-const store: Record<string, string> = {};
-const localStorageMock = {
-  getItem: vi.fn((key: string) => store[key] ?? null),
-  setItem: vi.fn((key: string, value: string) => { store[key] = value; }),
-  removeItem: vi.fn((key: string) => { delete store[key]; }),
-  clear: vi.fn(() => { Object.keys(store).forEach(k => delete store[k]); }),
-  get length() { return Object.keys(store).length; },
-  key: vi.fn((i: number) => Object.keys(store)[i] ?? null),
-};
-Object.defineProperty(globalThis, "localStorage", { value: localStorageMock });
-
-describe("Gallery Persistence", () => {
+describe("Gallery Persistence (IndexedDB)", () => {
   beforeEach(() => {
-    localStorageMock.clear();
-    vi.clearAllMocks();
+    (globalThis as any).indexedDB = new IDBFactory();
   });
 
-  it("should have convertedPhotos in STORAGE_KEYS", () => {
-    expect(STORAGE_KEYS.convertedPhotos).toBe("pixelboard-converted-photos");
-  });
-
-  it("should load empty array when no convertedPhotos in storage", () => {
-    const result = loadFromStorage(STORAGE_KEYS.convertedPhotos, []);
+  it("returns fallback when key is missing", async () => {
+    const { idbGet } = await freshIdb();
+    const result = await idbGet(KEYS.images, []);
     expect(result).toEqual([]);
   });
 
-  it("should persist and load convertedPhotos", () => {
+  it("persists and loads gallery images", async () => {
+    const { idbGet, idbSet } = await freshIdb();
+    const images = [
+      {
+        id: "img-1",
+        url: "data:image/png;base64,abc",
+        name: "test.png",
+        addedAt: Date.now(),
+      },
+    ];
+    await idbSet(KEYS.images, images);
+    const loaded = await idbGet(KEYS.images, []);
+    expect(loaded).toHaveLength(1);
+    expect((loaded as typeof images)[0].name).toBe("test.png");
+  });
+
+  it("persists and loads converted photos", async () => {
+    const { idbGet, idbSet } = await freshIdb();
     const photos = [
       {
         id: "test-1",
-        originalPreview: "data:image/png;base64,abc",
+        originalPreview: "",
         convertedUrl: "data:image/png;base64,xyz",
         originalName: "photo.jpg",
         prompt: "Make it watercolor",
@@ -69,7 +62,7 @@ describe("Gallery Persistence", () => {
       },
       {
         id: "test-2",
-        originalPreview: "data:image/png;base64,def",
+        originalPreview: "",
         convertedUrl: "",
         originalName: "photo2.jpg",
         prompt: "Make it sketch",
@@ -78,15 +71,15 @@ describe("Gallery Persistence", () => {
       },
     ];
 
-    saveToStorage(STORAGE_KEYS.convertedPhotos, photos);
-    const loaded = loadFromStorage(STORAGE_KEYS.convertedPhotos, []);
-    expect(loaded).toEqual(photos);
+    await idbSet(KEYS.convertedPhotos, photos);
+    const loaded = await idbGet<typeof photos>(KEYS.convertedPhotos, []);
     expect(loaded).toHaveLength(2);
     expect(loaded[0].status).toBe("done");
     expect(loaded[1].status).toBe("error");
   });
 
-  it("should only persist done and error photos (not pending/converting)", () => {
+  it("only persists done and error photos (not pending/converting)", async () => {
+    const { idbGet, idbSet } = await freshIdb();
     const allPhotos = [
       { id: "1", status: "done", convertedUrl: "url1" },
       { id: "2", status: "error", error: "fail" },
@@ -94,46 +87,76 @@ describe("Gallery Persistence", () => {
       { id: "4", status: "converting" },
     ];
 
-    // Simulate the filtering logic from GalleryContext
     const persistable = allPhotos.filter(
       (p) => p.status === "done" || p.status === "error"
     );
-    saveToStorage(STORAGE_KEYS.convertedPhotos, persistable);
+    await idbSet(KEYS.convertedPhotos, persistable);
 
-    const loaded = loadFromStorage(STORAGE_KEYS.convertedPhotos, []);
+    const loaded = await idbGet<typeof persistable>(KEYS.convertedPhotos, []);
     expect(loaded).toHaveLength(2);
-    expect(loaded.map((p: any) => p.id)).toEqual(["1", "2"]);
+    expect(loaded.map((p) => p.id)).toEqual(["1", "2"]);
   });
 
-  it("should persist gallery images", () => {
-    const images = [
-      { id: "img-1", url: "data:image/png;base64,abc", name: "test.png", addedAt: Date.now() },
-    ];
-    saveToStorage(STORAGE_KEYS.images, images);
-    const loaded = loadFromStorage(STORAGE_KEYS.images, []);
-    expect(loaded).toHaveLength(1);
-    expect(loaded[0].name).toBe("test.png");
-  });
-
-  it("should handle corrupted localStorage gracefully", () => {
-    store[STORAGE_KEYS.convertedPhotos] = "not valid json{{{";
-    const result = loadFromStorage(STORAGE_KEYS.convertedPhotos, []);
-    expect(result).toEqual([]);
-  });
-
-  it("should persist and load grid size", () => {
-    saveToStorage(STORAGE_KEYS.gridSize, 4);
-    const loaded = loadFromStorage(STORAGE_KEYS.gridSize, 3);
+  it("persists and loads grid size", async () => {
+    const { idbGet, idbSet } = await freshIdb();
+    await idbSet(KEYS.gridSize, 4);
+    const loaded = await idbGet(KEYS.gridSize, 3);
     expect(loaded).toBe(4);
   });
 
-  it("should persist and load prompt history", () => {
+  it("persists and loads API key", async () => {
+    const { idbGet, idbSet } = await freshIdb();
+    await idbSet(KEYS.apiKey, "my-secret-key");
+    const loaded = await idbGet(KEYS.apiKey, "");
+    expect(loaded).toBe("my-secret-key");
+  });
+
+  it("removes a key", async () => {
+    const { idbGet, idbSet, idbRemove } = await freshIdb();
+    await idbSet(KEYS.apiKey, "to-delete");
+    await idbRemove(KEYS.apiKey);
+    const loaded = await idbGet(KEYS.apiKey, "");
+    expect(loaded).toBe("");
+  });
+
+  it("persists and loads prompt history", async () => {
+    const { idbGet, idbSet } = await freshIdb();
     const history = [
-      { id: "p1", text: "watercolor", usedAt: Date.now(), useCount: 3, isFavorite: true },
+      {
+        id: "p1",
+        text: "watercolor",
+        usedAt: Date.now(),
+        useCount: 3,
+        isFavorite: true,
+      },
     ];
-    saveToStorage(STORAGE_KEYS.promptHistory, history);
-    const loaded = loadFromStorage(STORAGE_KEYS.promptHistory, []);
+    await idbSet(KEYS.promptHistory, history);
+    const loaded = await idbGet<typeof history>(KEYS.promptHistory, []);
     expect(loaded).toHaveLength(1);
     expect(loaded[0].isFavorite).toBe(true);
+  });
+
+  it("persists and loads cumulative stats", async () => {
+    const { idbGet, idbSet } = await freshIdb();
+    const st = { totalConverted: 42, totalSuccess: 38 };
+    await idbSet(KEYS.stats, st);
+    const loaded = await idbGet(KEYS.stats, { totalConverted: 0, totalSuccess: 0 });
+    expect(loaded).toEqual(st);
+  });
+
+  it("overwrites an existing value", async () => {
+    const { idbGet, idbSet } = await freshIdb();
+    await idbSet(KEYS.gridSize, 2);
+    await idbSet(KEYS.gridSize, 4);
+    const loaded = await idbGet(KEYS.gridSize, 3);
+    expect(loaded).toBe(4);
+  });
+
+  it("returns fallback on missing key after delete", async () => {
+    const { idbGet, idbSet, idbRemove } = await freshIdb();
+    await idbSet(KEYS.gridSize, 2);
+    await idbRemove(KEYS.gridSize);
+    const loaded = await idbGet(KEYS.gridSize, 3);
+    expect(loaded).toBe(3);
   });
 });
