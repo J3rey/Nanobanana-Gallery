@@ -381,15 +381,12 @@ export default function BatchConvert() {
               } else {
                 setBatchError({
                   ...apiError,
-                  message: `Rate limit reached after ${maxRetries} retries. Remaining photos skipped. Please wait and try again.`,
+                  message: `Rate limit hit for one photo after ${maxRetries} retries — skipping it and continuing.`,
                 });
-                abortRef.current = true;
                 setConvertedPhotos((prev) =>
                   prev.map((r) =>
                     r.id === photo.id
                       ? { ...r, status: "error" as const, error: "Rate limit — max retries reached" }
-                      : r.status === "pending"
-                      ? { ...r, status: "error" as const, error: "Skipped: Rate limit" }
                       : r
                   )
                 );
@@ -466,6 +463,11 @@ export default function BatchConvert() {
       }
 
       setProgress(((i + 1) / photos.length) * 100);
+
+      // Small delay between requests to avoid hitting rate limits
+      if (i < photos.length - 1 && !abortRef.current) {
+        await sleep(1000);
+      }
     }
 
     setIsConverting(false);
