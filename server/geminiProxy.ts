@@ -17,6 +17,7 @@
 import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { checkBatchSize, reserveGeminiImageUse } from "./geminiUsageLimiter";
 // No S3 dependency — images returned as base64 data URLs
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -43,9 +44,10 @@ export const geminiRouter = router({
         imageBase64: z.string().optional(),
         imageMimeType: z.string().default("image/jpeg"),
         model: z.string().default(DEFAULT_MODEL),
+        batchSize: z.number().int().positive().default(1),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { prompt, imageBase64, imageMimeType, model } = input;
 
       // Resolve the effective API key — user key takes precedence over server default
@@ -74,6 +76,20 @@ export const geminiRouter = router({
           };
         }
         effectiveKey = serverKey;
+      }
+
+      const batchLimit = await checkBatchSize(input.batchSize, ctx, effectiveKey);
+      if (!batchLimit.allowed) {
+        return {
+          ok: false,
+          status: 429,
+          data: {
+            code: "PIXELBOARD_USAGE_LIMIT",
+            limitType: batchLimit.limitType,
+            message: batchLimit.message,
+            usage: batchLimit.usage,
+          },
+        };
       }
 
       try {
@@ -108,6 +124,21 @@ export const geminiRouter = router({
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 120_000);
+
+        const usageLimit = await reserveGeminiImageUse(ctx, effectiveKey);
+        if (!usageLimit.allowed) {
+          clearTimeout(timeoutId);
+          return {
+            ok: false,
+            status: 429,
+            data: {
+              code: "PIXELBOARD_USAGE_LIMIT",
+              limitType: usageLimit.limitType,
+              message: usageLimit.message,
+              usage: usageLimit.usage,
+            },
+          };
+        }
 
         const response = await fetch(url, {
           method: "POST",
@@ -223,6 +254,14 @@ export const geminiRouter = router({
    */
   serverKeyStatus: publicProcedure.query(() => {
     return { configured: !!process.env.GEMINI_DEFAULT_API_KEY };
+  }),
+
+  /**
+   * Current PixelBoard-side safety caps for Gemini image calls.
+   */
+  usageStatus: publicProcedure.query(async ({ ctx }) => {
+    const limit = await checkBatchSize(1, ctx);
+    return limit.usage;
   }),
 
   /**

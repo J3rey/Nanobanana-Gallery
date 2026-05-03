@@ -45,9 +45,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useGallery } from "@/contexts/GalleryContext";
 import { trpc } from "@/lib/trpc";
 import type { UploadedPhoto, ConvertedPhoto } from "@/lib/types";
+import {
+  MAX_BATCH_SIZE,
+  MAX_IMAGES_PER_DAY,
+  MAX_IMAGES_PER_USER_PER_DAY,
+  type GeminiUsageSnapshot,
+} from "@shared/geminiLimits";
 import { nanoid } from "nanoid";
 import { toast } from "sonner";
 import ApiKeyDialog from "@/components/ApiKeyDialog";
@@ -65,13 +78,21 @@ const STYLE_PRESETS = [
 ];
 
 // Error classification
-type ApiErrorType = "rate_limit" | "quota_exhausted" | "auth_error" | "network_error" | "server_error" | "unknown";
+type ApiErrorType = "rate_limit" | "usage_limit" | "quota_exhausted" | "auth_error" | "network_error" | "server_error" | "unknown";
 
 interface ApiError {
   type: ApiErrorType;
   message: string;
   retryAfter?: number; // seconds
   statusCode?: number;
+  usage?: GeminiUsageSnapshot;
+  limitType?: string;
+}
+
+interface LimitDialogState {
+  title: string;
+  message: string;
+  usage?: GeminiUsageSnapshot;
 }
 
 function classifyError(err: any, statusCode?: number): ApiError {
@@ -85,6 +106,16 @@ function classifyError(err: any, statusCode?: number): ApiError {
 
   // HTTP status-based classification
   if (statusCode === 429) {
+    if (err.code === "PIXELBOARD_USAGE_LIMIT") {
+      return {
+        type: "usage_limit",
+        message: err.message || "PixelBoard safety cap reached. No Gemini request was sent.",
+        statusCode,
+        usage: err.usage,
+        limitType: err.limitType,
+      };
+    }
+
     const retryAfter = err.retryAfter || 30;
     return {
       type: "rate_limit",
@@ -126,6 +157,7 @@ function classifyError(err: any, statusCode?: number): ApiError {
 function getErrorIcon(type: ApiErrorType) {
   switch (type) {
     case "rate_limit": return <Clock className="w-5 h-5" />;
+    case "usage_limit": return <Ban className="w-5 h-5" />;
     case "quota_exhausted": return <Ban className="w-5 h-5" />;
     case "auth_error": return <ShieldAlert className="w-5 h-5" />;
     case "network_error": return <WifiOff className="w-5 h-5" />;
@@ -137,6 +169,7 @@ function getErrorIcon(type: ApiErrorType) {
 function getErrorColor(type: ApiErrorType) {
   switch (type) {
     case "rate_limit": return { bg: "bg-amber-50/80", border: "border-amber-200/60", icon: "text-amber-500", text: "text-amber-700" };
+    case "usage_limit": return { bg: "bg-blue-50/80", border: "border-blue-200/60", icon: "text-blue-500", text: "text-blue-700" };
     case "quota_exhausted": return { bg: "bg-red-50/80", border: "border-red-200/60", icon: "text-red-500", text: "text-red-700" };
     case "auth_error": return { bg: "bg-orange-50/80", border: "border-orange-200/60", icon: "text-orange-500", text: "text-orange-700" };
     case "network_error": return { bg: "bg-slate-50/80", border: "border-slate-200/60", icon: "text-slate-500", text: "text-slate-700" };
@@ -154,6 +187,7 @@ export default function BatchConvert() {
   const [progress, setProgress] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showApiDialog, setShowApiDialog] = useState(false);
+  const [limitDialog, setLimitDialog] = useState<LimitDialogState | null>(null);
   
   // Error state
   const [batchError, setBatchError] = useState<ApiError | null>(null);
@@ -166,6 +200,14 @@ export default function BatchConvert() {
 
   // tRPC mutation for generating images via Gemini backend proxy
   const generateMutation = trpc.gemini.generate.useMutation();
+  const usageQuery = trpc.gemini.usageStatus.useQuery(undefined, {
+    staleTime: 10_000,
+  });
+
+  const openLimitDialog = useCallback((title: string, message: string, usage?: GeminiUsageSnapshot) => {
+    setLimitDialog({ title, message, usage });
+    toast.warning(title, { description: message });
+  }, []);
 
   const handleFiles = useCallback((files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter((f) =>
@@ -176,7 +218,19 @@ export default function BatchConvert() {
       return;
     }
 
-    const newPhotos: UploadedPhoto[] = imageFiles.map((file) => ({
+    const remainingSlots = Math.max(0, MAX_BATCH_SIZE - photos.length);
+    if (remainingSlots === 0) {
+      openLimitDialog(
+        "Batch limit reached",
+        `You can convert up to ${MAX_BATCH_SIZE} images in one batch. Clear or remove one first.`
+      );
+      return;
+    }
+
+    const acceptedFiles = imageFiles.slice(0, remainingSlots);
+    const skippedCount = imageFiles.length - acceptedFiles.length;
+
+    const newPhotos: UploadedPhoto[] = acceptedFiles.map((file) => ({
       id: nanoid(),
       file,
       preview: URL.createObjectURL(file),
@@ -185,8 +239,15 @@ export default function BatchConvert() {
     }));
 
     setPhotos((prev) => [...prev, ...newPhotos]);
-    toast.success(`Added ${imageFiles.length} photo${imageFiles.length > 1 ? "s" : ""}`);
-  }, []);
+    toast.success(`Added ${acceptedFiles.length} photo${acceptedFiles.length > 1 ? "s" : ""}`);
+
+    if (skippedCount > 0) {
+      openLimitDialog(
+        "Only 3 images per batch",
+        `${skippedCount} image${skippedCount === 1 ? "" : "s"} were skipped so this batch stays inside the safety cap.`
+      );
+    }
+  }, [openLimitDialog, photos.length]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -245,7 +306,7 @@ export default function BatchConvert() {
    * Convert a single photo via the backend tRPC proxy.
    * Returns { ok, status, data } so the caller can classify errors.
    */
-  const convertSinglePhoto = async (photo: UploadedPhoto, currentPrompt: string) => {
+  const convertSinglePhoto = async (photo: UploadedPhoto, currentPrompt: string, batchSize: number) => {
     const base64 = await fileToBase64(photo.file);
 
     const result = await generateMutation.mutateAsync({
@@ -253,6 +314,7 @@ export default function BatchConvert() {
       prompt: currentPrompt,
       imageBase64: base64,
       imageMimeType: photo.file.type,
+      batchSize,
     });
 
     return result; // { status, data, ok }
@@ -265,6 +327,29 @@ export default function BatchConvert() {
     }
     if (!prompt.trim()) {
       toast.error("Please enter a conversion prompt");
+      return;
+    }
+    if (photos.length > MAX_BATCH_SIZE) {
+      openLimitDialog(
+        "Batch limit reached",
+        `This batch has ${photos.length} images. Keep it to ${MAX_BATCH_SIZE} or fewer so the Gemini safety cap holds.`
+      );
+      return;
+    }
+    if (usageQuery.data && photos.length > usageQuery.data.userRemaining) {
+      openLimitDialog(
+        "Daily user cap reached",
+        `This browser has ${usageQuery.data.userRemaining} Gemini image conversion${usageQuery.data.userRemaining === 1 ? "" : "s"} left today. The per-user cap is ${MAX_IMAGES_PER_USER_PER_DAY}.`,
+        usageQuery.data
+      );
+      return;
+    }
+    if (usageQuery.data && photos.length > usageQuery.data.globalRemaining) {
+      openLimitDialog(
+        "Daily project cap reached",
+        `PixelBoard has ${usageQuery.data.globalRemaining} Gemini image conversion${usageQuery.data.globalRemaining === 1 ? "" : "s"} left today. The project cap is ${MAX_IMAGES_PER_DAY}.`,
+        usageQuery.data
+      );
       return;
     }
     if (cooldownSeconds > 0) {
@@ -323,12 +408,18 @@ export default function BatchConvert() {
 
       while (retries <= maxRetries && !converted && !abortRef.current) {
         try {
-          const result = await convertSinglePhoto(photo, prompt);
+          const result = await convertSinglePhoto(photo, prompt, photos.length);
 
           if (!result.ok) {
             // Non-OK response from Gemini API (proxied through backend)
             const apiError = classifyError(
-              { message: result.data?.message || result.data?.error || `HTTP ${result.status}`, retryAfter: 30 },
+              {
+                code: result.data?.code,
+                limitType: result.data?.limitType,
+                message: result.data?.message || result.data?.error || `HTTP ${result.status}`,
+                retryAfter: 30,
+                usage: result.data?.usage,
+              },
               result.status
             );
 
@@ -359,6 +450,24 @@ export default function BatchConvert() {
                     ? { ...r, status: "error" as const, error: apiError.message }
                     : r.status === "pending"
                     ? { ...r, status: "error" as const, error: "Stopped: API quota exhausted" }
+                    : r
+                )
+              );
+              failCount++;
+              converted = true;
+              break;
+            }
+
+            if (apiError.type === "usage_limit") {
+              setBatchError(apiError);
+              openLimitDialog("Gemini safety cap reached", apiError.message, apiError.usage);
+              abortRef.current = true;
+              setConvertedPhotos((prev) =>
+                prev.map((r) =>
+                  r.id === photo.id
+                    ? { ...r, status: "error" as const, error: apiError.message }
+                    : r.status === "pending"
+                    ? { ...r, status: "error" as const, error: "Stopped: safety cap reached" }
                     : r
                 )
               );
@@ -472,6 +581,7 @@ export default function BatchConvert() {
 
     setIsConverting(false);
     recordConversion(successCount, failCount);
+    usageQuery.refetch();
 
     // Smart summary toast
     if (abortRef.current && failCount > 0) {
@@ -498,6 +608,29 @@ export default function BatchConvert() {
 
     const failedPhotos = convertedPhotos.filter((p) => p.status === "error");
     if (failedPhotos.length === 0) return;
+    if (failedPhotos.length > MAX_BATCH_SIZE) {
+      openLimitDialog(
+        "Retry batch is too large",
+        `There are ${failedPhotos.length} failed images. Keep retries to ${MAX_BATCH_SIZE} at a time to stay inside the Gemini safety cap.`
+      );
+      return;
+    }
+    if (usageQuery.data && failedPhotos.length > usageQuery.data.userRemaining) {
+      openLimitDialog(
+        "Daily user cap reached",
+        `This browser has ${usageQuery.data.userRemaining} Gemini image conversion${usageQuery.data.userRemaining === 1 ? "" : "s"} left today.`,
+        usageQuery.data
+      );
+      return;
+    }
+    if (usageQuery.data && failedPhotos.length > usageQuery.data.globalRemaining) {
+      openLimitDialog(
+        "Daily project cap reached",
+        `PixelBoard has ${usageQuery.data.globalRemaining} Gemini image conversion${usageQuery.data.globalRemaining === 1 ? "" : "s"} left today.`,
+        usageQuery.data
+      );
+      return;
+    }
 
     setBatchError(null);
     setIsConverting(true);
@@ -530,19 +663,27 @@ export default function BatchConvert() {
       );
 
       try {
-        const result = await convertSinglePhoto(originalPhoto, prompt || failedPhoto.prompt);
+        const result = await convertSinglePhoto(originalPhoto, prompt || failedPhoto.prompt, failedPhotos.length);
 
         if (!result.ok) {
           const apiError = classifyError(
-            { message: result.data?.message || result.data?.error || `HTTP ${result.status}` },
+            {
+              code: result.data?.code,
+              limitType: result.data?.limitType,
+              message: result.data?.message || result.data?.error || `HTTP ${result.status}`,
+              usage: result.data?.usage,
+            },
             result.status
           );
 
-          if (apiError.type === "auth_error" || apiError.type === "quota_exhausted" || apiError.type === "rate_limit") {
+          if (apiError.type === "auth_error" || apiError.type === "quota_exhausted" || apiError.type === "rate_limit" || apiError.type === "usage_limit") {
             setBatchError(apiError);
             abortRef.current = true;
             if (apiError.type === "rate_limit") {
               startCooldown(apiError.retryAfter || 30);
+            }
+            if (apiError.type === "usage_limit") {
+              openLimitDialog("Gemini safety cap reached", apiError.message, apiError.usage);
             }
           }
 
@@ -582,6 +723,7 @@ export default function BatchConvert() {
 
     setIsConverting(false);
     recordConversion(retrySuccess, retryFail);
+    usageQuery.refetch();
 
     if (retrySuccess > 0 && retryFail === 0) {
       toast.success(`All ${retrySuccess} retries succeeded!`);
@@ -653,6 +795,28 @@ export default function BatchConvert() {
         </p>
       </div>
 
+      <div className="glass rounded-2xl p-4 card-shadow mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+              <Ban className="w-4 h-4 text-blue-500" />
+              Gemini safety caps
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {MAX_BATCH_SIZE} per batch, {MAX_IMAGES_PER_USER_PER_DAY} per user per day, {MAX_IMAGES_PER_DAY} per project per day
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="px-2.5 py-1 rounded-lg bg-white/55 text-slate-600 font-semibold">
+              User {usageQuery.data ? usageQuery.data.userRemaining : MAX_IMAGES_PER_USER_PER_DAY} left
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-white/55 text-slate-600 font-semibold">
+              Project {usageQuery.data ? usageQuery.data.globalRemaining : MAX_IMAGES_PER_DAY} left
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* === Batch Error Banner === */}
       <AnimatePresence>
         {batchError && (
@@ -670,6 +834,7 @@ export default function BatchConvert() {
                 <div className="flex-1 min-w-0">
                   <h4 className={`text-sm font-bold ${getErrorColor(batchError.type).text} mb-0.5`}>
                     {batchError.type === "rate_limit" && "Rate Limit Reached"}
+                    {batchError.type === "usage_limit" && "Safety Cap Reached"}
                     {batchError.type === "quota_exhausted" && "API Quota Exhausted"}
                     {batchError.type === "auth_error" && "Authentication Failed"}
                     {batchError.type === "network_error" && "Connection Error"}
@@ -783,7 +948,7 @@ export default function BatchConvert() {
               Drop photos here or click to browse
             </h3>
             <p className="text-sm text-slate-400">
-              Supports JPG, PNG, WebP — up to 25 photos at once
+              Supports JPG, PNG, WebP - up to 3 photos per batch
             </p>
           </div>
         ) : (
@@ -807,7 +972,16 @@ export default function BatchConvert() {
                   variant="outline"
                   size="sm"
                   className="glass rounded-lg text-slate-500 hover:text-blue-600 hover:bg-white/60"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    if (photos.length >= MAX_BATCH_SIZE) {
+                      openLimitDialog(
+                        "Batch limit reached",
+                        `You can convert up to ${MAX_BATCH_SIZE} images in one batch. Remove one before adding more.`
+                      );
+                      return;
+                    }
+                    fileInputRef.current?.click();
+                  }}
                 >
                   <Upload className="w-3.5 h-3.5 mr-1.5" />
                   Add More
@@ -1166,6 +1340,54 @@ export default function BatchConvert() {
           </div>
         </motion.div>
       )}
+
+      <Dialog open={!!limitDialog} onOpenChange={(open) => !open && setLimitDialog(null)}>
+        <DialogContent className="glass-strong rounded-2xl border-white/30 max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                <Ban className="w-4 h-4 text-white" />
+              </div>
+              {limitDialog?.title || "Gemini safety cap"}
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              {limitDialog?.message}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-white/55 rounded-xl p-3 border border-white/40">
+                <div className="text-[10px] uppercase font-semibold text-slate-400">Batch</div>
+                <div className="text-lg font-bold text-slate-700">{MAX_BATCH_SIZE}</div>
+              </div>
+              <div className="bg-white/55 rounded-xl p-3 border border-white/40">
+                <div className="text-[10px] uppercase font-semibold text-slate-400">User left</div>
+                <div className="text-lg font-bold text-slate-700">
+                  {limitDialog?.usage?.userRemaining ?? usageQuery.data?.userRemaining ?? MAX_IMAGES_PER_USER_PER_DAY}
+                </div>
+              </div>
+              <div className="bg-white/55 rounded-xl p-3 border border-white/40">
+                <div className="text-[10px] uppercase font-semibold text-slate-400">Project left</div>
+                <div className="text-lg font-bold text-slate-700">
+                  {limitDialog?.usage?.globalRemaining ?? usageQuery.data?.globalRemaining ?? MAX_IMAGES_PER_DAY}
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              PixelBoard blocks the request before it reaches Gemini when these caps are hit. Daily counters follow Gemini's Pacific-time quota day.
+            </p>
+
+            <Button
+              onClick={() => setLimitDialog(null)}
+              className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl h-10 font-semibold"
+            >
+              Got it
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <ApiKeyDialog open={showApiDialog} onOpenChange={setShowApiDialog} />
     </div>
